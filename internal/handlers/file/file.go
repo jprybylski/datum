@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"example.com/pinup/internal/core"
 	"example.com/pinup/internal/registry"
 )
 
@@ -19,7 +20,7 @@ func (h *handler) Fingerprint(ctx context.Context, src registry.Source) (string,
 	if src.Path == "" {
 		return "", errors.New("file: missing source.path")
 	}
-	hh, err := core.hashFile(src.Path) // we'll expose hash as exported
+	hh, err := core.HashFile(src.Path) // use exported HashFile function
 	if err != nil {
 		return "", err
 	}
