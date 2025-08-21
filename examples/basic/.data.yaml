@@ -1,0 +1,13 @@
+version: 1
+defaults:
+  policy: fail
+  algo: sha256
+
+datasets:
+  - id: cdc_wtage
+    desc: CDC weight-for-age 2–20y
+    source:
+      type: http
+      url: https://www.cdc.gov/growthcharts/data/zscore/wtage.csv
+    target: data/ref/wtage.csv
+    policy: fail

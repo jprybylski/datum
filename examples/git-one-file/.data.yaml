@@ -1,0 +1,15 @@
+version: 1
+defaults:
+  policy: fail
+  algo: sha256
+
+datasets:
+  - id: weights_from_repo
+    desc: Weight lookup from a release tag in a Git repo
+    source:
+      type: git
+      url: https://github.com/acme/peds-data.git
+      ref: v1.2.3
+      path: data/lookup/weights.csv
+    target: data/ref/weights.csv
+    policy: fail
