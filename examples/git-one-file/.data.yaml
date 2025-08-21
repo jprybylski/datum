@@ -4,12 +4,12 @@ defaults:
   algo: sha256
 
 datasets:
-  - id: weights_from_repo
-    desc: Weight lookup from a release tag in a Git repo
+  - id: google_uuid_license
+    desc: "LICENSE from github.com/google/uuid (branch: main)"
     source:
       type: git
-      url: https://github.com/acme/peds-data.git
-      ref: v1.2.3
-      path: data/lookup/weights.csv
-    target: data/ref/weights.csv
+      url: https://github.com/google/uuid.git
+      ref: main
+      path: LICENSE
+    target: data/ref/google_uuid_LICENSE.txt
     policy: fail
