@@ -1,4 +1,4 @@
-module example.com/pinup
+module example.com/datum
 
 go 1.22
 

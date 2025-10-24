@@ -21,7 +21,7 @@ import (
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	xssh "golang.org/x/crypto/ssh"
 
-	"example.com/pinup/internal/registry"
+	"example.com/datum/internal/registry"
 )
 
 type handler struct{}
@@ -216,7 +216,7 @@ func defaultCacheDir() string {
 		return v
 	}
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".cache", "pinup")
+	return filepath.Join(home, ".cache", "datum")
 }
 
 func shortHash(s string) string {
