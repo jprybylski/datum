@@ -107,9 +107,23 @@ func TestHandler_Fetch(t *testing.T) {
 			t.Fatalf("failed to read output file: %v", err)
 		}
 		// Check for "fetched content" with flexible line ending
+		// Note: cmd.exe's echo adds a trailing space before line ending
 		contentStr := string(content)
-		if contentStr != "fetched content\n" && contentStr != "fetched content\r\n" {
-			t.Errorf("Fetch() content = %q, want %q or %q", contentStr, "fetched content\n", "fetched content\r\n")
+		validOutputs := []string{
+			"fetched content\n",
+			"fetched content\r\n",
+			"fetched content \n",   // cmd.exe on Windows
+			"fetched content \r\n", // cmd.exe on Windows
+		}
+		valid := false
+		for _, expected := range validOutputs {
+			if contentStr == expected {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			t.Errorf("Fetch() content = %q, want one of %v", contentStr, validOutputs)
 		}
 	})
 
@@ -153,10 +167,22 @@ func TestHandler_Fetch(t *testing.T) {
 			t.Fatalf("failed to read output file: %v", err)
 		}
 		contentStr := string(content)
-		expected1 := "url=http://example.com path=/some/path ref=v1.0.0\n"
-		expected2 := "url=http://example.com path=/some/path ref=v1.0.0\r\n"
-		if contentStr != expected1 && contentStr != expected2 {
-			t.Errorf("Fetch() content = %q, want %q or %q", contentStr, expected1, expected2)
+		// Note: cmd.exe's echo adds a trailing space before line ending
+		validOutputs := []string{
+			"url=http://example.com path=/some/path ref=v1.0.0\n",
+			"url=http://example.com path=/some/path ref=v1.0.0\r\n",
+			"url=http://example.com path=/some/path ref=v1.0.0 \n",   // cmd.exe on Windows
+			"url=http://example.com path=/some/path ref=v1.0.0 \r\n", // cmd.exe on Windows
+		}
+		valid := false
+		for _, expected := range validOutputs {
+			if contentStr == expected {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			t.Errorf("Fetch() content = %q, want one of %v", contentStr, validOutputs)
 		}
 	})
 

@@ -4,9 +4,10 @@
 //
 // This file (shell_windows.go) is compiled only on Windows due to the build constraint above.
 //
-// Windows shell handling is more complex than Unix because Windows has multiple shell options:
-//   - PowerShell (preferred, more powerful and modern)
-//   - cmd.exe (fallback for older systems or when PowerShell is not available)
+// Windows shell handling: We use cmd.exe instead of PowerShell for better compatibility
+// and to avoid PowerShell's UTF-16 LE default encoding for file redirects (the > operator).
+// PowerShell 5.x uses UTF-16 LE by default which causes issues with cross-platform tests
+// that expect UTF-8. cmd.exe uses the system code page which is more predictable.
 package runtime
 
 import (
@@ -15,10 +16,11 @@ import (
 	"os/exec"
 )
 
-// RunShell executes a shell command using PowerShell or cmd.exe on Windows.
+// RunShell executes a shell command using cmd.exe on Windows.
 //
-// The function prefers PowerShell if available (more powerful and modern), but falls back
-// to cmd.exe if PowerShell is not found in the system PATH.
+// We use cmd.exe rather than PowerShell to avoid encoding issues with file redirection.
+// PowerShell 5.x (still common on Windows) uses UTF-16 LE encoding by default for the
+// > redirect operator, which causes cross-platform compatibility issues.
 //
 // Parameters:
 //   - ctx: Context for cancellation and timeout control
@@ -29,22 +31,12 @@ import (
 //   - The command's combined stdout and stderr output
 //   - An error if the command fails or returns non-zero exit code
 //
-// PowerShell flags explained:
-//   - -NoProfile: Don't load user profile (faster startup)
-//   - -ExecutionPolicy Bypass: Allow script execution without policy restrictions
-//   - -Command: Execute the following command string
+// cmd.exe flags explained:
+//   - /C: Execute the command and then terminate
 func RunShell(ctx context.Context, cmdline string, env []string) (string, error) {
-	var cmd *exec.Cmd
-
-	// Try to find PowerShell in the system PATH
-	if _, err := exec.LookPath("powershell"); err == nil {
-		// PowerShell is available - use it with flags to bypass profile and execution policy
-		cmd = exec.CommandContext(ctx, "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", cmdline)
-	} else {
-		// PowerShell not found - fall back to cmd.exe
-		// /C means "execute command and then terminate"
-		cmd = exec.CommandContext(ctx, "cmd", "/C", cmdline)
-	}
+	// Use cmd.exe for consistent cross-platform behavior
+	// /C means "execute command and then terminate"
+	cmd := exec.CommandContext(ctx, "cmd", "/C", cmdline)
 
 	// Append custom environment variables if provided
 	if env != nil {
