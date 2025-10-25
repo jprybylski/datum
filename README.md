@@ -18,9 +18,10 @@ Think of it as a "lockfile" for external data sources, similar to how `package-l
 - [Configuration](#configuration)
 - [Commands](#commands)
 - [Data Source Handlers](#data-source-handlers)
-- [Understanding the Go Code](#understanding-the-go-code)
+- [Architecture and Implementation](#architecture-and-implementation)
 - [Project Structure](#project-structure)
 - [Development Guide](#development-guide)
+- [Examples](#examples)
 
 ## What Does Datum Do?
 
@@ -537,7 +538,7 @@ Complete working examples are available in the `examples/` directory.
 
 ### Example 1: HTTP Handler - Tracking CDC Growth Chart Data
 
-From `examples/basic/.data.yaml`:
+From [`examples/basic/.data.yaml`](examples/basic/.data.yaml):
 
 ```yaml
 version: 1
@@ -566,7 +567,7 @@ datum --config .data.yaml check
 
 ### Example 2: Git Handler - Tracking Dependency Licenses
 
-From `examples/git-one-file/.data.yaml`:
+From [`examples/git-one-file/.data.yaml`](examples/git-one-file/.data.yaml):
 
 ```yaml
 version: 1

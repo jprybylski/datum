@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"example.com/datum/internal/registry"
@@ -22,7 +23,7 @@ func TestHandler_Fingerprint(t *testing.T) {
 
 	t.Run("successful fingerprint", func(t *testing.T) {
 		src := registry.Source{
-			FingerprintCmd: "echo 'test-fingerprint'",
+			FingerprintCmd: "echo test-fingerprint",
 		}
 
 		fp, err := h.Fingerprint(ctx, src)
@@ -34,7 +35,10 @@ func TestHandler_Fingerprint(t *testing.T) {
 		}
 	})
 
-	t.Run("fingerprint with date", func(t *testing.T) {
+	t.Run("fingerprint with command", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("skipping Unix-specific test on Windows")
+		}
 		src := registry.Source{
 			FingerprintCmd: "date +%Y-%m-%d",
 		}
@@ -89,7 +93,7 @@ func TestHandler_Fetch(t *testing.T) {
 	t.Run("successful fetch", func(t *testing.T) {
 		destFile := filepath.Join(tmpDir, "output1.txt")
 		src := registry.Source{
-			FetchCmd: "echo 'fetched content' > {{dest}}",
+			FetchCmd: "echo fetched content > {{dest}}",
 		}
 
 		err := h.Fetch(ctx, src, destFile)
@@ -102,12 +106,17 @@ func TestHandler_Fetch(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to read output file: %v", err)
 		}
-		if string(content) != "fetched content\n" {
-			t.Errorf("Fetch() content = %q, want %q", string(content), "fetched content\n")
+		// Check for "fetched content" with flexible line ending
+		contentStr := string(content)
+		if contentStr != "fetched content\n" && contentStr != "fetched content\r\n" {
+			t.Errorf("Fetch() content = %q, want %q or %q", contentStr, "fetched content\n", "fetched content\r\n")
 		}
 	})
 
 	t.Run("fetch with DEST env variable", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("skipping Unix-specific test on Windows")
+		}
 		destFile := filepath.Join(tmpDir, "subdir", "output2.txt")
 		src := registry.Source{
 			FetchCmd: "mkdir -p $(dirname $DEST) && echo 'env test' > $DEST",
@@ -130,7 +139,7 @@ func TestHandler_Fetch(t *testing.T) {
 			URL:      "http://example.com",
 			Path:     "/some/path",
 			Ref:      "v1.0.0",
-			FetchCmd: "echo 'url={{url}} path={{path}} ref={{ref}}' > {{dest}}",
+			FetchCmd: "echo url={{url}} path={{path}} ref={{ref}} > {{dest}}",
 		}
 
 		err := h.Fetch(ctx, src, destFile)
@@ -143,9 +152,11 @@ func TestHandler_Fetch(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to read output file: %v", err)
 		}
-		expected := "url=http://example.com path=/some/path ref=v1.0.0\n"
-		if string(content) != expected {
-			t.Errorf("Fetch() content = %q, want %q", string(content), expected)
+		contentStr := string(content)
+		expected1 := "url=http://example.com path=/some/path ref=v1.0.0\n"
+		expected2 := "url=http://example.com path=/some/path ref=v1.0.0\r\n"
+		if contentStr != expected1 && contentStr != expected2 {
+			t.Errorf("Fetch() content = %q, want %q or %q", contentStr, expected1, expected2)
 		}
 	})
 
