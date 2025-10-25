@@ -18,14 +18,14 @@ import "context"
 // YAML tags control how this struct is serialized/deserialized from configuration files.
 // The `omitempty` tag means the field will be omitted from YAML if it's empty.
 type Source struct {
-    Type string `yaml:"type"` // Handler type: "http", "file", "git", or "command"
-    URL  string `yaml:"url,omitempty"`  // URL for http and git handlers
-    Path string `yaml:"path,omitempty"` // File path for file and git handlers
-    Ref  string `yaml:"ref,omitempty"`  // Git ref (branch/tag) for git handler
+	Type string `yaml:"type"`           // Handler type: "http", "file", "git", or "command"
+	URL  string `yaml:"url,omitempty"`  // URL for http and git handlers
+	Path string `yaml:"path,omitempty"` // File path for file and git handlers
+	Ref  string `yaml:"ref,omitempty"`  // Git ref (branch/tag) for git handler
 
-    // Command handler specific fields
-    FingerprintCmd string `yaml:"fingerprint_cmd,omitempty"` // Command to compute fingerprint
-    FetchCmd       string `yaml:"fetch_cmd,omitempty"`       // Command to fetch data
+	// Command handler specific fields
+	FingerprintCmd string `yaml:"fingerprint_cmd,omitempty"` // Command to compute fingerprint
+	FetchCmd       string `yaml:"fetch_cmd,omitempty"`       // Command to fetch data
 }
 
 // Fetcher is the interface that all data source handlers must implement.
@@ -35,19 +35,19 @@ type Source struct {
 //
 // Context is passed to enable cancellation and timeouts.
 type Fetcher interface {
-    // Name returns the handler's type identifier (e.g., "http", "file", "git", "command").
-    // This name is used to look up the handler when processing datasets.
-    Name() string
+	// Name returns the handler's type identifier (e.g., "http", "file", "git", "command").
+	// This name is used to look up the handler when processing datasets.
+	Name() string
 
-    // Fingerprint computes a stable identifier for the data source without downloading it.
-    // Different handlers use different strategies (ETag, file hash, git blob SHA, etc.).
-    // Returns a fingerprint string or an error if computation fails.
-    Fingerprint(ctx context.Context, src Source) (string, error)
+	// Fingerprint computes a stable identifier for the data source without downloading it.
+	// Different handlers use different strategies (ETag, file hash, git blob SHA, etc.).
+	// Returns a fingerprint string or an error if computation fails.
+	Fingerprint(ctx context.Context, src Source) (string, error)
 
-    // Fetch downloads or copies the data from the source to the destination file.
-    // The dest parameter is the local file path where data should be written.
-    // Returns an error if the fetch operation fails.
-    Fetch(ctx context.Context, src Source, dest string) error
+	// Fetch downloads or copies the data from the source to the destination file.
+	// The dest parameter is the local file path where data should be written.
+	// Returns an error if the fetch operation fails.
+	Fetch(ctx context.Context, src Source, dest string) error
 }
 
 // fetchers is the global registry of all available handlers.
@@ -59,9 +59,10 @@ var fetchers = map[string]Fetcher{}
 // This function is typically called from handler packages' init() functions.
 //
 // Example usage in a handler package:
-//   func init() {
-//       registry.Register(New())
-//   }
+//
+//	func init() {
+//	    registry.Register(New())
+//	}
 func Register(f Fetcher) { fetchers[f.Name()] = f }
 
 // Get retrieves a handler by its type name.
@@ -69,6 +70,6 @@ func Register(f Fetcher) { fetchers[f.Name()] = f }
 //
 // The boolean return value follows Go's "comma ok" idiom for safe map lookups.
 func Get(kind string) (Fetcher, bool) {
-    f, ok := fetchers[kind]
-    return f, ok
+	f, ok := fetchers[kind]
+	return f, ok
 }

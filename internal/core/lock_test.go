@@ -56,8 +56,9 @@ items:
 		if err != nil {
 			t.Errorf("readLock() unexpected error = %v", err)
 		}
-		if lk.Items == nil {
-			// This is OK - empty lock
+		// Lock items may be nil for an empty lock - this is acceptable
+		if lk.Items != nil && len(lk.Items) > 0 {
+			t.Errorf("readLock() expected empty items, got %d items", len(lk.Items))
 		}
 	})
 

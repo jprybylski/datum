@@ -12,10 +12,10 @@ import (
 //
 // This is the main verification function for datum. It loads the configuration and lockfile,
 // then for each dataset:
-//   1. Computes the current remote fingerprint
-//   2. Compares it against the recorded fingerprint in the lockfile
-//   3. Applies the dataset's policy (fail, update, or log)
-//   4. Updates the lockfile with the current state
+//  1. Computes the current remote fingerprint
+//  2. Compares it against the recorded fingerprint in the lockfile
+//  3. Applies the dataset's policy (fail, update, or log)
+//  4. Updates the lockfile with the current state
 //
 // Policies explained:
 //   - "fail": Exit with error if remote has changed (strict mode for CI/CD)
