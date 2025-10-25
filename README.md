@@ -597,38 +597,66 @@ datum --config .data.yaml check
 
 ### Example 3: File Handler - Copying Local Files
 
+From [`examples/file-copy/.data.yaml`](examples/file-copy/.data.yaml):
+
 ```yaml
 version: 1
+defaults:
+  policy: update
+  algo: sha256
+
 datasets:
   - id: local_config
     desc: Configuration from local path
     source:
       type: file
-      path: /path/to/your/source.json
+      path: source-config.json
     target: config/copied.json
     policy: update
 ```
 
 Use the file handler to copy files from local paths or network shares, with automatic updates when the source changes.
 
-### Example 4: Command Handler - Using curl
+**Try it:**
+```bash
+cd examples/file-copy
+datum --config .data.yaml fetch
+datum --config .data.yaml check
+```
+
+### Example 4: Command Handler - System Information
+
+From [`examples/command-system/.data.yaml`](examples/command-system/.data.yaml):
 
 ```yaml
 version: 1
+defaults:
+  policy: log
+  algo: sha256
+
 datasets:
-  - id: github_readme
-    desc: Fetch README using curl
+  - id: system_info
+    desc: Fetch system information using command
     source:
       type: command
-      fingerprint_cmd: "curl -sI https://raw.githubusercontent.com/google/uuid/master/README.md | grep -i etag"
-      fetch_cmd: "curl -sL -o {{dest}} https://raw.githubusercontent.com/google/uuid/master/README.md"
-    target: data/uuid-readme.md
+      fingerprint_cmd: "date +%Y-%m-%d"
+      fetch_cmd: "mkdir -p $(dirname {{dest}}) && uname -a > {{dest}}"
+    target: data/system-info.txt
     policy: log
 ```
 
-The command handler allows custom fetch logic using shell commands. This example uses curl to fetch a file with ETag-based fingerprinting.
+The command handler allows custom fetch logic using shell commands. This example captures system information and uses a date-based fingerprint.
+
+**Try it:**
+```bash
+cd examples/command-system
+datum --config .data.yaml fetch
+datum --config .data.yaml check
+```
 
 ### Example 5: Multiple Datasets with Different Policies
+
+From [`examples/multi-policy/.data.yaml`](examples/multi-policy/.data.yaml):
 
 ```yaml
 version: 1
@@ -670,6 +698,13 @@ datasets:
 ```
 
 This example demonstrates using different policies for different types of data: strict verification for critical data, automatic updates for documentation, and monitoring-only for informational tracking.
+
+**Try it:**
+```bash
+cd examples/multi-policy
+datum --config .data.yaml fetch
+datum --config .data.yaml check
+```
 
 ## FAQ
 

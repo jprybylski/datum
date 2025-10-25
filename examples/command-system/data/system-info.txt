@@ -1,0 +1,1 @@
+Darwin Johns-MacBook-Pro.local 25.0.0 Darwin Kernel Version 25.0.0: Wed Sep 17 21:41:26 PDT 2025; root:xnu-12377.1.9~141/RELEASE_ARM64_T6041 arm64

@@ -1,0 +1,13 @@
+version: 1
+defaults:
+  policy: update
+  algo: sha256
+
+datasets:
+  - id: local_config
+    desc: Configuration from local path
+    source:
+      type: file
+      path: source-config.json
+    target: config/copied.json
+    policy: update

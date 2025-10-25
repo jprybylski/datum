@@ -1,0 +1,9 @@
+{
+  "app": "datum-example",
+  "version": "1.0.0",
+  "settings": {
+    "timeout": 30,
+    "retries": 3,
+    "debug": false
+  }
+}

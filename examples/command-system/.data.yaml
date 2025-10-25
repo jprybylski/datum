@@ -1,0 +1,14 @@
+version: 1
+defaults:
+  policy: log
+  algo: sha256
+
+datasets:
+  - id: system_info
+    desc: Fetch system information using command
+    source:
+      type: command
+      fingerprint_cmd: "date +%Y-%m-%d"
+      fetch_cmd: "mkdir -p $(dirname {{dest}}) && uname -a > {{dest}}"
+    target: data/system-info.txt
+    policy: log

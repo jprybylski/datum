@@ -1,0 +1,36 @@
+version: 1
+defaults:
+  policy: fail
+  algo: sha256
+
+datasets:
+  # Critical reference data - fail if changed
+  - id: cdc_wtage
+    desc: CDC weight-for-age 2–20y
+    source:
+      type: http
+      url: https://www.cdc.gov/growthcharts/data/zscore/wtage.csv
+    target: data/wtage.csv
+    policy: fail
+
+  # Auto-update documentation
+  - id: uuid_license
+    desc: Google UUID library license
+    source:
+      type: git
+      url: https://github.com/google/uuid.git
+      ref: master
+      path: LICENSE
+    target: docs/licenses/uuid-LICENSE.txt
+    policy: update
+
+  # Monitor for changes
+  - id: uuid_readme
+    desc: Google UUID readme
+    source:
+      type: git
+      url: https://github.com/google/uuid.git
+      ref: master
+      path: README.md
+    target: docs/uuid-README.md
+    policy: log
