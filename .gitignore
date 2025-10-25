@@ -1,2 +1,15 @@
 pinup.exe
 a.out
+
+# Test coverage
+coverage.txt
+coverage.out
+*.coverprofile
+
+# Build artifacts
+/datum
+/datum.exe
+/bin/
+
+# Temporary files
+*.tmp
