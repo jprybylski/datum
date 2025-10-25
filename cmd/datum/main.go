@@ -31,7 +31,7 @@ import (
 // The help text uses Go's raw string literals (backticks) which preserve
 // formatting and don't require escaping newlines.
 func usage() {
-    fmt.Println(`datum - verify/fetch external data by config+lock
+    fmt.Print(`datum - verify/fetch external data by config+lock
 
 Usage:
   datum [--config .data.yaml] [--lock .data.lock.yaml] check

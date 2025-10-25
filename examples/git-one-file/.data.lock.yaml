@@ -1,0 +1,7 @@
+version: 1
+last_checked: 2025-10-25T01:19:26.949003Z
+items:
+    google_uuid_license:
+        local_sha256: 0a8d61ed3cbfd5312326e8126c31ce9c627a283adc99131b56896d29ada04b2d
+        remote_fingerprint: gitblob:5dc68268d900581915a7bfdc1f2be75cd503dd9e
+        checked_at: 2025-10-25T01:19:26.949003Z

@@ -571,11 +571,11 @@ defaults:
 
 datasets:
   - id: google_uuid_license
-    desc: "LICENSE from github.com/google/uuid (branch: main)"
+    desc: "LICENSE from github.com/google/uuid (branch: master)"
     source:
       type: git
       url: https://github.com/google/uuid.git
-      ref: main
+      ref: master
       path: LICENSE
     target: data/ref/google_uuid_LICENSE.txt
     policy: fail
@@ -647,7 +647,7 @@ datasets:
     source:
       type: git
       url: https://github.com/google/uuid.git
-      ref: main
+      ref: master
       path: LICENSE
     target: docs/licenses/uuid-LICENSE.txt
     policy: update
@@ -658,7 +658,7 @@ datasets:
     source:
       type: git
       url: https://github.com/google/uuid.git
-      ref: main
+      ref: master
       path: README.md
     target: docs/uuid-README.md
     policy: log

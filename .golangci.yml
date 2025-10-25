@@ -1,9 +1,34 @@
 version: "1"
 run:
-  timeout: 3m
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+
 linters:
   enable:
     - gofumpt
     - gci
     - revive
     - staticcheck
+    - govet
+    - errcheck
+    - unused
+    - gosimple
+    - ineffassign
+    - typecheck
+    - goimports
+    - misspell
+    - unconvert
+
+linters-settings:
+  revive:
+    rules:
+      - name: exported
+        disabled: true  # Don't require comments on all exported items
+
+issues:
+  exclude-rules:
+    # Exclude some linters from running on test files
+    - path: _test\.go
+      linters:
+        - errcheck

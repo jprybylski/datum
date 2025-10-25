@@ -176,14 +176,20 @@ func fetchAllRefs(repoURL string, repo *git.Repository) error {
 func resolveRefCommit(repo *git.Repository, name plumbing.ReferenceName) (*object.Commit, error) {
 	ref, err := repo.Reference(name, true)
 	if err != nil {
-		// If not a branch, try tag
-		if !strings.HasPrefix(string(name), "refs/") {
+		// If it's a branch ref, try the remote tracking ref
+		if strings.HasPrefix(string(name), "refs/heads/") {
+			remoteName := strings.Replace(string(name), "refs/heads/", "refs/remotes/origin/", 1)
+			ref, err = repo.Reference(plumbing.ReferenceName(remoteName), true)
+		}
+		// If not a branch or remote didn't work, try tag
+		if err != nil && !strings.HasPrefix(string(name), "refs/") {
 			if ref2, err2 := repo.Reference(plumbing.NewTagReferenceName(name.String()), true); err2 == nil {
 				ref = ref2
-			} else {
-				return nil, fmt.Errorf("git: cannot resolve ref %q", name)
+				err = nil
 			}
-		} else {
+		}
+		// Still no luck?
+		if err != nil {
 			return nil, fmt.Errorf("git: cannot resolve ref %q", name)
 		}
 	}
