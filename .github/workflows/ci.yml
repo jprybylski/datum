@@ -24,10 +24,7 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: ${{ matrix.go-version }}
-        cache-dependency-path: go.sum
-
-    - name: Tidy dependencies
-      run: go mod tidy
+        cache: false
 
     - name: Download dependencies
       run: go mod download
@@ -70,10 +67,7 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: '1.23'
-        cache-dependency-path: go.sum
-
-    - name: Tidy dependencies
-      run: go mod tidy
+        cache: false
 
     - name: Build without git support
       run: go build -v ./cmd/datum
@@ -93,10 +87,7 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: '1.23'
-        cache-dependency-path: go.sum
-
-    - name: Tidy dependencies
-      run: go mod tidy
+        cache: false
 
     - name: Run golangci-lint
       uses: golangci/golangci-lint-action@v6
@@ -116,10 +107,7 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: '1.23'
-        cache-dependency-path: go.sum
-
-    - name: Tidy dependencies
-      run: go mod tidy
+        cache: false
 
     - name: Build datum with git support
       run: go build -tags git -o datum ./cmd/datum
