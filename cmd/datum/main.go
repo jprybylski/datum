@@ -12,16 +12,16 @@ import (
 	"fmt"
 	"os"
 
-	"example.com/datum/internal/core"
+	"github.com/jprybylski/datum/internal/core"
 	// Side-effect imports: These imports don't use any exported symbols,
 	// but they run init() functions that register handlers with the registry.
 	// The underscore (_) tells Go we're importing for side effects only.
 	//
 	// Go learning note: init() functions in these packages run automatically
 	// before main(), registering their handlers in the global registry.
-	_ "example.com/datum/internal/handlers/command"
-	_ "example.com/datum/internal/handlers/file"
-	_ "example.com/datum/internal/handlers/http"
+	_ "github.com/jprybylski/datum/internal/handlers/command"
+	_ "github.com/jprybylski/datum/internal/handlers/file"
+	_ "github.com/jprybylski/datum/internal/handlers/http"
 )
 
 // usage prints help text to stdout.

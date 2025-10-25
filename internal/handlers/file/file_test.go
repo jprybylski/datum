@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"example.com/datum/internal/registry"
+	"github.com/jprybylski/datum/internal/registry"
 )
 
 func TestHandler_Name(t *testing.T) {

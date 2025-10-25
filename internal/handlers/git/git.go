@@ -21,7 +21,7 @@ import (
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	xssh "golang.org/x/crypto/ssh"
 
-	"example.com/datum/internal/registry"
+	"github.com/jprybylski/datum/internal/registry"
 )
 
 type handler struct{}

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"example.com/datum/internal/registry"
+	"github.com/jprybylski/datum/internal/registry"
 )
 
 // Check verifies all configured datasets against the lockfile according to their policies.

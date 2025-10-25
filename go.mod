@@ -1,4 +1,4 @@
-module example.com/datum
+module github.com/jprybylski/datum
 
 go 1.23.0
 

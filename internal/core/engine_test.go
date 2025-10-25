@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"example.com/datum/internal/registry"
+	"github.com/jprybylski/datum/internal/registry"
 )
 
 // Simple mock handler for testing

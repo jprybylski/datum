@@ -15,7 +15,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"example.com/datum/internal/registry"
+	"github.com/jprybylski/datum/internal/registry"
 )
 
 // Config represents the structure of the .data.yaml configuration file.

@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"example.com/datum/internal/core"
-	"example.com/datum/internal/registry"
+	"github.com/jprybylski/datum/internal/core"
+	"github.com/jprybylski/datum/internal/registry"
 )
 
 type handler struct{}

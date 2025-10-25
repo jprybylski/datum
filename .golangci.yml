@@ -24,7 +24,7 @@ linters-settings:
     sections:
       - standard
       - default
-      - prefix(example.com/datum)
+      - prefix(github.com/jprybylski/datum)
   revive:
     rules:
       - name: exported

@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strings"
 
-	"example.com/datum/internal/registry"
-	runrt "example.com/datum/internal/runtime"
+	"github.com/jprybylski/datum/internal/registry"
+	runrt "github.com/jprybylski/datum/internal/runtime"
 )
 
 type handler struct{}

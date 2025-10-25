@@ -308,8 +308,8 @@ The codebase demonstrates several important Go patterns and concepts:
 
 ### 1. Module System (`go.mod`)
 
-The `go.mod` file defines this as a Go module with the path `example.com/datum`. This enables:
-- Import paths like `example.com/datum/internal/core`
+The `go.mod` file defines this as a Go module with the path `github.com/jprybylski/datum`. This enables:
+- Import paths like `github.com/jprybylski/datum/internal/core`
 - Dependency management with versioning
 - Reproducible builds
 
@@ -463,7 +463,7 @@ package myhandler
 
 import (
     "context"
-    "example.com/datum/internal/registry"
+    "github.com/jprybylski/datum/internal/registry"
 )
 
 type handler struct{}
@@ -490,7 +490,7 @@ func init() {
 3. Import it in `cmd/datum/main.go`:
 
 ```go
-_ "example.com/datum/internal/handlers/myhandler"
+_ "github.com/jprybylski/datum/internal/handlers/myhandler"
 ```
 
 ### Running Tests

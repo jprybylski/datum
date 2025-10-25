@@ -2,4 +2,4 @@
 
 package main
 
-import _ "example.com/datum/internal/handlers/git"
+import _ "github.com/jprybylski/datum/internal/handlers/git"
