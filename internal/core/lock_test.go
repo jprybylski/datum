@@ -20,7 +20,7 @@ items:
     remote_fingerprint: def456
     checked_at: 2025-10-24T12:00:00Z
 `
-		if err := os.WriteFile(lockPath, []byte(lockContent), 0644); err != nil {
+		if err := os.WriteFile(lockPath, []byte(lockContent), 0o644); err != nil {
 			t.Fatalf("failed to create test lock file: %v", err)
 		}
 
@@ -57,7 +57,7 @@ items:
 			t.Errorf("readLock() unexpected error = %v", err)
 		}
 		// Lock items may be nil for an empty lock - this is acceptable
-		if lk.Items != nil && len(lk.Items) > 0 {
+		if len(lk.Items) > 0 {
 			t.Errorf("readLock() expected empty items, got %d items", len(lk.Items))
 		}
 	})
@@ -65,7 +65,7 @@ items:
 	t.Run("invalid YAML", func(t *testing.T) {
 		invalidPath := filepath.Join(tmpDir, "invalid.lock.yaml")
 		invalidContent := "this is not: valid: yaml: content:"
-		if err := os.WriteFile(invalidPath, []byte(invalidContent), 0644); err != nil {
+		if err := os.WriteFile(invalidPath, []byte(invalidContent), 0o644); err != nil {
 			t.Fatalf("failed to create invalid lock file: %v", err)
 		}
 

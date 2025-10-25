@@ -23,7 +23,7 @@ func TestHandler_Fingerprint(t *testing.T) {
 	// Create a test file
 	testFile := filepath.Join(tmpDir, "test.txt")
 	content := "test content for fingerprinting"
-	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte(content), 0o644); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
@@ -76,7 +76,7 @@ func TestHandler_Fetch(t *testing.T) {
 	// Create a source file
 	srcFile := filepath.Join(tmpDir, "source.txt")
 	srcContent := "source file content"
-	if err := os.WriteFile(srcFile, []byte(srcContent), 0644); err != nil {
+	if err := os.WriteFile(srcFile, []byte(srcContent), 0o644); err != nil {
 		t.Fatalf("failed to create source file: %v", err)
 	}
 

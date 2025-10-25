@@ -13,8 +13,9 @@ package core
 import (
 	"os"
 
-	"example.com/datum/internal/registry"
 	"gopkg.in/yaml.v3"
+
+	"example.com/datum/internal/registry"
 )
 
 // Config represents the structure of the .data.yaml configuration file.

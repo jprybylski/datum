@@ -36,7 +36,7 @@ func TestHashFile(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a temporary file with the test content
 			testFile := filepath.Join(tmpDir, tt.name+".txt")
-			if err := os.WriteFile(testFile, []byte(tt.content), 0644); err != nil {
+			if err := os.WriteFile(testFile, []byte(tt.content), 0o644); err != nil {
 				t.Fatalf("failed to create test file: %v", err)
 			}
 
@@ -73,7 +73,7 @@ func TestFileExists(t *testing.T) {
 
 	// Create a test file
 	testFile := filepath.Join(tmpDir, "exists.txt")
-	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte("test"), 0o644); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 

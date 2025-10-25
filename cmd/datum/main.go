@@ -13,7 +13,6 @@ import (
 	"os"
 
 	"example.com/datum/internal/core"
-
 	// Side-effect imports: These imports don't use any exported symbols,
 	// but they run init() functions that register handlers with the registry.
 	// The underscore (_) tells Go we're importing for side effects only.

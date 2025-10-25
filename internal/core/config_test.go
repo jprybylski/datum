@@ -25,7 +25,7 @@ datasets:
     target: data/test.csv
     policy: update
 `
-		if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		if err := os.WriteFile(configPath, []byte(configContent), 0o644); err != nil {
 			t.Fatalf("failed to create test config: %v", err)
 		}
 
@@ -64,7 +64,7 @@ datasets:
 	t.Run("invalid YAML", func(t *testing.T) {
 		invalidPath := filepath.Join(tmpDir, "invalid.yaml")
 		invalidContent := "this is not: valid: yaml: content:"
-		if err := os.WriteFile(invalidPath, []byte(invalidContent), 0644); err != nil {
+		if err := os.WriteFile(invalidPath, []byte(invalidContent), 0o644); err != nil {
 			t.Fatalf("failed to create invalid config: %v", err)
 		}
 

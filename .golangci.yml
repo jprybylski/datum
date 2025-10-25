@@ -20,6 +20,11 @@ linters:
     - unconvert
 
 linters-settings:
+  gci:
+    sections:
+      - standard
+      - default
+      - prefix(example.com/datum)
   revive:
     rules:
       - name: exported
