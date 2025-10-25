@@ -56,12 +56,12 @@ defaults:
   algo: sha256
 
 datasets:
-  - id: example_csv
-    desc: Example CSV file from the web
+  - id: cdc_wtage
+    desc: CDC weight-for-age 2–20y
     source:
       type: http
-      url: https://example.com/data.csv
-    target: data/example.csv
+      url: https://www.cdc.gov/growthcharts/data/zscore/wtage.csv
+    target: data/ref/wtage.csv
     policy: fail
 ```
 
@@ -296,9 +296,9 @@ export GIT_SSH_KEY=/path/to/private/key
 export GIT_SSH_PASSPHRASE=optional-passphrase
 ```
 
-## Understanding the Go Code
+## Architecture and Implementation
 
-This project is a great learning resource for Go beginners. Here are some key Go concepts used:
+The codebase demonstrates several important Go patterns and concepts:
 
 ### 1. Module System (`go.mod`)
 
@@ -528,64 +528,143 @@ GOOS=darwin GOARCH=amd64 go build -o bin/datum-mac ./cmd/datum
 
 ## Examples
 
-### Example 1: Track a CSV from the Web
+Complete working examples are available in the `examples/` directory.
+
+### Example 1: HTTP Handler - Tracking CDC Growth Chart Data
+
+From `examples/basic/.data.yaml`:
 
 ```yaml
 version: 1
+defaults:
+  policy: fail
+  algo: sha256
+
 datasets:
-  - id: population_data
-    desc: UN population estimates
+  - id: cdc_wtage
+    desc: CDC weight-for-age 2–20y
     source:
       type: http
-      url: https://example.com/population.csv
-    target: data/population.csv
+      url: https://www.cdc.gov/growthcharts/data/zscore/wtage.csv
+    target: data/ref/wtage.csv
     policy: fail
 ```
 
-### Example 2: Copy a Configuration File
+This example fetches CDC reference data for weight-for-age charts. The `fail` policy ensures your pipeline breaks if the upstream data changes unexpectedly.
+
+**Try it:**
+```bash
+cd examples/basic
+datum --config .data.yaml fetch
+datum --config .data.yaml check
+```
+
+### Example 2: Git Handler - Tracking Dependency Licenses
+
+From `examples/git-one-file/.data.yaml`:
+
+```yaml
+version: 1
+defaults:
+  policy: fail
+  algo: sha256
+
+datasets:
+  - id: google_uuid_license
+    desc: "LICENSE from github.com/google/uuid (branch: main)"
+    source:
+      type: git
+      url: https://github.com/google/uuid.git
+      ref: main
+      path: LICENSE
+    target: data/ref/google_uuid_LICENSE.txt
+    policy: fail
+```
+
+This example tracks the LICENSE file from a GitHub repository, useful for compliance tracking or ensuring you're always using the correct license text.
+
+**Try it:**
+```bash
+cd examples/git-one-file
+datum --config .data.yaml fetch
+datum --config .data.yaml check
+```
+
+### Example 3: File Handler - Copying Local Files
 
 ```yaml
 version: 1
 datasets:
-  - id: shared_config
-    desc: Shared configuration from network drive
+  - id: local_config
+    desc: Configuration from local path
     source:
       type: file
-      path: /mnt/shared/config.json
-    target: config/shared.json
+      path: /path/to/your/source.json
+    target: config/copied.json
     policy: update
 ```
 
-### Example 3: Track a License File from GitHub
+Use the file handler to copy files from local paths or network shares, with automatic updates when the source changes.
+
+### Example 4: Command Handler - Using curl
 
 ```yaml
 version: 1
 datasets:
-  - id: dependency_license
-    desc: License file from dependency
-    source:
-      type: git
-      url: https://github.com/some/library.git
-      ref: v1.2.3
-      path: LICENSE
-    target: licenses/dependency-LICENSE.txt
-    policy: fail
-```
-
-### Example 4: Custom Script
-
-```yaml
-version: 1
-datasets:
-  - id: processed_data
-    desc: Data processed by custom script
+  - id: github_readme
+    desc: Fetch README using curl
     source:
       type: command
-      fingerprint_cmd: "date +%Y-%m-%d"
-      fetch_cmd: "./scripts/generate-data.sh {{dest}}"
-    target: data/processed.json
+      fingerprint_cmd: "curl -sI https://raw.githubusercontent.com/google/uuid/master/README.md | grep -i etag"
+      fetch_cmd: "curl -sL -o {{dest}} https://raw.githubusercontent.com/google/uuid/master/README.md"
+    target: data/uuid-readme.md
     policy: log
 ```
+
+The command handler allows custom fetch logic using shell commands. This example uses curl to fetch a file with ETag-based fingerprinting.
+
+### Example 5: Multiple Datasets with Different Policies
+
+```yaml
+version: 1
+defaults:
+  policy: fail
+  algo: sha256
+
+datasets:
+  # Critical reference data - fail if changed
+  - id: cdc_wtage
+    desc: CDC weight-for-age 2–20y
+    source:
+      type: http
+      url: https://www.cdc.gov/growthcharts/data/zscore/wtage.csv
+    target: data/wtage.csv
+    policy: fail
+
+  # Auto-update documentation
+  - id: uuid_license
+    desc: Google UUID library license
+    source:
+      type: git
+      url: https://github.com/google/uuid.git
+      ref: main
+      path: LICENSE
+    target: docs/licenses/uuid-LICENSE.txt
+    policy: update
+
+  # Monitor for changes
+  - id: uuid_readme
+    desc: Google UUID readme
+    source:
+      type: git
+      url: https://github.com/google/uuid.git
+      ref: main
+      path: README.md
+    target: docs/uuid-README.md
+    policy: log
+```
+
+This example demonstrates using different policies for different types of data: strict verification for critical data, automatic updates for documentation, and monitoring-only for informational tracking.
 
 ## FAQ
 
