@@ -63,6 +63,106 @@ datasets:
 			t.Errorf("Check() = %d, want 2", code)
 		}
 	})
+
+	t.Run("fail policy does not update lockfile", func(t *testing.T) {
+		configPath := filepath.Join(tmpDir, "fail_config.yaml")
+		targetFile := filepath.Join(tmpDir, "fail_target.txt")
+		lockPath := filepath.Join(tmpDir, "fail_lock.yaml")
+
+		configContent := `version: 1
+datasets:
+  - id: test_fail
+    source:
+      type: mock
+    target: ` + targetFile + `
+    policy: fail
+`
+		os.WriteFile(configPath, []byte(configContent), 0o644)
+
+		// Create a lockfile with an old fingerprint
+		lockContent := `version: 1
+items:
+  test_fail:
+    local_sha256: old_hash
+    remote_fingerprint: old_fingerprint
+`
+		os.WriteFile(lockPath, []byte(lockContent), 0o644)
+
+		// Run Check - should fail since fingerprint changed
+		code := Check(configPath, lockPath)
+		if code != 1 {
+			t.Errorf("Check() = %d, want 1 (should fail on changed fingerprint)", code)
+		}
+
+		// Read lockfile and verify it wasn't updated
+		lk, err := readLock(lockPath)
+		if err != nil {
+			t.Fatalf("readLock() error = %v", err)
+		}
+
+		item := lk.Items["test_fail"]
+		if item == nil {
+			t.Fatal("test_fail item should still exist in lockfile")
+		}
+
+		// Verify the fingerprint was NOT updated
+		if item.RemoteFingerprint != "old_fingerprint" {
+			t.Errorf("RemoteFingerprint = %v, want old_fingerprint (should not update)", item.RemoteFingerprint)
+		}
+		if item.LocalSHA256 != "old_hash" {
+			t.Errorf("LocalSHA256 = %v, want old_hash (should not update)", item.LocalSHA256)
+		}
+	})
+
+	t.Run("log policy does not update lockfile", func(t *testing.T) {
+		configPath := filepath.Join(tmpDir, "log_config.yaml")
+		targetFile := filepath.Join(tmpDir, "log_target.txt")
+		lockPath := filepath.Join(tmpDir, "log_lock.yaml")
+
+		configContent := `version: 1
+datasets:
+  - id: test_log
+    source:
+      type: mock
+    target: ` + targetFile + `
+    policy: log
+`
+		os.WriteFile(configPath, []byte(configContent), 0o644)
+
+		// Create a lockfile with an old fingerprint
+		lockContent := `version: 1
+items:
+  test_log:
+    local_sha256: old_hash
+    remote_fingerprint: old_fingerprint
+`
+		os.WriteFile(lockPath, []byte(lockContent), 0o644)
+
+		// Run Check - should succeed (log doesn't fail)
+		code := Check(configPath, lockPath)
+		if code != 0 {
+			t.Errorf("Check() = %d, want 0 (log policy should not fail)", code)
+		}
+
+		// Read lockfile and verify it wasn't updated
+		lk, err := readLock(lockPath)
+		if err != nil {
+			t.Fatalf("readLock() error = %v", err)
+		}
+
+		item := lk.Items["test_log"]
+		if item == nil {
+			t.Fatal("test_log item should still exist in lockfile")
+		}
+
+		// Verify the fingerprint was NOT updated
+		if item.RemoteFingerprint != "old_fingerprint" {
+			t.Errorf("RemoteFingerprint = %v, want old_fingerprint (should not update)", item.RemoteFingerprint)
+		}
+		if item.LocalSHA256 != "old_hash" {
+			t.Errorf("LocalSHA256 = %v, want old_hash (should not update)", item.LocalSHA256)
+		}
+	})
 }
 
 func TestFetch(t *testing.T) {

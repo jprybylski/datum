@@ -15,12 +15,12 @@ import (
 //  1. Computes the current remote fingerprint
 //  2. Compares it against the recorded fingerprint in the lockfile
 //  3. Applies the dataset's policy (fail, update, or log)
-//  4. Updates the lockfile with the current state
+//  4. Updates the lockfile (only for "update" policy)
 //
 // Policies explained:
-//   - "fail": Exit with error if remote has changed (strict mode for CI/CD)
-//   - "update": Automatically fetch new data if remote has changed
-//   - "log": Report changes but don't fail or update (monitoring mode)
+//   - "fail": Exit with error if remote has changed (strict mode for CI/CD) - does not update lockfile
+//   - "update": Automatically fetch new data if remote has changed - updates lockfile
+//   - "log": Report changes but don't fail or update (monitoring mode) - does not update lockfile
 //
 // Parameters:
 //   - cfgPath: Path to the configuration file (.data.yaml)
@@ -134,14 +134,7 @@ func Check(cfgPath, lockPath string) int {
 			} else {
 				fmt.Printf("[OK  ] %s: up-to-date\n", ds.ID)
 			}
-			// Always update the lock entry with current state
-			if item == nil {
-				item = &LockItem{}
-				lk.Items[ds.ID] = item
-			}
-			item.LocalSHA256 = localHash
-			item.RemoteFingerprint = fp
-			item.CheckedAt = &now
+			// Don't update the lock - we want to keep reporting stale status until actually updated
 
 		case "fail":
 			// FAIL policy: Exit with error if remote has changed (strict mode)
@@ -155,14 +148,7 @@ func Check(cfgPath, lockPath string) int {
 			} else {
 				fmt.Printf("[OK  ] %s: up-to-date\n", ds.ID)
 			}
-			// Update lock entry regardless of staleness
-			if item == nil {
-				item = &LockItem{}
-				lk.Items[ds.ID] = item
-			}
-			item.LocalSHA256 = localHash
-			item.RemoteFingerprint = fp
-			item.CheckedAt = &now
+			// Don't update the lock - we want to keep failing until actually updated
 
 		default:
 			// Unknown policy - treat as "fail" with a warning
