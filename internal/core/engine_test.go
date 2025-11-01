@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -26,8 +27,22 @@ func (m *mockHandler) Fetch(ctx context.Context, src registry.Source, dest strin
 	return os.WriteFile(dest, []byte("mock data"), 0o644)
 }
 
+// Mock handler that always fails on fetch
+type mockFailHandler struct{}
+
+func (m *mockFailHandler) Name() string { return "mockfail" }
+
+func (m *mockFailHandler) Fingerprint(ctx context.Context, src registry.Source) (string, error) {
+	return "mockfail-fp", nil
+}
+
+func (m *mockFailHandler) Fetch(ctx context.Context, src registry.Source, dest string) error {
+	return errors.New("simulated network error: connection timeout")
+}
+
 func init() {
 	registry.Register(&mockHandler{})
+	registry.Register(&mockFailHandler{})
 }
 
 func TestCheck(t *testing.T) {
@@ -163,6 +178,49 @@ items:
 			t.Errorf("LocalSHA256 = %v, want old_hash (should not update)", item.LocalSHA256)
 		}
 	})
+
+	t.Run("fetch failure records inaccessible in lockfile", func(t *testing.T) {
+		configPath := filepath.Join(tmpDir, "fail_fetch_config.yaml")
+		targetFile := filepath.Join(tmpDir, "fail_fetch_target.txt")
+		lockPath := filepath.Join(tmpDir, "fail_fetch_lock.yaml")
+
+		configContent := `version: 1
+datasets:
+  - id: test_fetch_fail
+    source:
+      type: mockfail
+    target: ` + targetFile + `
+    policy: update
+`
+		os.WriteFile(configPath, []byte(configContent), 0o644)
+
+		// Run Check - should fail since fetch fails
+		code := Check(configPath, lockPath)
+		if code != 1 {
+			t.Errorf("Check() = %d, want 1 (should fail on fetch error)", code)
+		}
+
+		// Read lockfile and verify inaccessible fields are set
+		lk, err := readLock(lockPath)
+		if err != nil {
+			t.Fatalf("readLock() error = %v", err)
+		}
+
+		item := lk.Items["test_fetch_fail"]
+		if item == nil {
+			t.Fatal("test_fetch_fail item should exist in lockfile")
+		}
+
+		// Verify InaccessibleAt is set
+		if item.InaccessibleAt == nil {
+			t.Error("InaccessibleAt should be set when fetch fails")
+		}
+
+		// Verify InaccessibleError contains the error message
+		if item.InaccessibleError != "simulated network error: connection timeout" {
+			t.Errorf("InaccessibleError = %v, want 'simulated network error: connection timeout'", item.InaccessibleError)
+		}
+	})
 }
 
 func TestFetch(t *testing.T) {
@@ -199,6 +257,48 @@ datasets:
 		code := Fetch(configPath, lockPath, nil)
 		if code != 2 {
 			t.Errorf("Fetch() = %d, want 2", code)
+		}
+	})
+
+	t.Run("fetch failure records inaccessible in lockfile", func(t *testing.T) {
+		configPath := filepath.Join(tmpDir, "fetch_fail_config.yaml")
+		targetFile := filepath.Join(tmpDir, "fetch_fail_target.txt")
+		lockPath := filepath.Join(tmpDir, "fetch_fail_lock.yaml")
+
+		configContent := `version: 1
+datasets:
+  - id: fetch_fail_test
+    source:
+      type: mockfail
+    target: ` + targetFile + `
+`
+		os.WriteFile(configPath, []byte(configContent), 0o644)
+
+		// Run Fetch - should fail since fetch fails
+		code := Fetch(configPath, lockPath, nil)
+		if code != 1 {
+			t.Errorf("Fetch() = %d, want 1 (should fail on fetch error)", code)
+		}
+
+		// Read lockfile and verify inaccessible fields are set
+		lk, err := readLock(lockPath)
+		if err != nil {
+			t.Fatalf("readLock() error = %v", err)
+		}
+
+		item := lk.Items["fetch_fail_test"]
+		if item == nil {
+			t.Fatal("fetch_fail_test item should exist in lockfile")
+		}
+
+		// Verify InaccessibleAt is set
+		if item.InaccessibleAt == nil {
+			t.Error("InaccessibleAt should be set when fetch fails")
+		}
+
+		// Verify InaccessibleError contains the error message
+		if item.InaccessibleError != "simulated network error: connection timeout" {
+			t.Errorf("InaccessibleError = %v, want 'simulated network error: connection timeout'", item.InaccessibleError)
 		}
 	})
 }

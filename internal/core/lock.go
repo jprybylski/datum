@@ -25,10 +25,13 @@ type Lock struct {
 //   - The local file's hash (to detect local modifications)
 //   - The remote source's fingerprint (to detect upstream changes)
 //   - When it was last verified
+//   - If the source became inaccessible, when and why
 type LockItem struct {
 	LocalSHA256       string     `yaml:"local_sha256,omitempty"`       // SHA256 hash of the local file
 	RemoteFingerprint string     `yaml:"remote_fingerprint,omitempty"` // Remote fingerprint (ETag, git SHA, etc.)
 	CheckedAt         *time.Time `yaml:"checked_at,omitempty"`         // Last verification timestamp
+	InaccessibleAt    *time.Time `yaml:"inaccessible_at,omitempty"`    // When the source became inaccessible
+	InaccessibleError string     `yaml:"inaccessible_error,omitempty"` // Error message when fetch failed
 }
 
 // readLock loads the lockfile from disk.

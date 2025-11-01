@@ -103,14 +103,23 @@ func Check(cfgPath, lockPath string) int {
 				fmt.Printf("[UPD ] %s: refreshing\n", ds.ID)
 				if err := f.Fetch(ctx, ds.Source, ds.Target); err != nil {
 					fmt.Printf("[ERR ] %s: fetch: %v\n", ds.ID, err)
+					fmt.Printf("[INFO] %s: source may be inaccessible - please verify the source configuration\n", ds.ID)
+					// Record the failure in the lock file
+					if item == nil {
+						item = &LockItem{}
+						lk.Items[ds.ID] = item
+					}
+					item.InaccessibleAt = &now
+					item.InaccessibleError = err.Error()
 					if exit == 0 {
 						exit = 1
 					}
 					continue
 				}
 				// Update lockfile with new fingerprint and local hash
+				// Clear inaccessible status since fetch succeeded
 				h, _ := HashFile(ds.Target)
-				lk.Items[ds.ID] = &LockItem{LocalSHA256: h, RemoteFingerprint: fp, CheckedAt: &now}
+				lk.Items[ds.ID] = &LockItem{LocalSHA256: h, RemoteFingerprint: fp, CheckedAt: &now, InaccessibleAt: nil, InaccessibleError: ""}
 			} else {
 				// Remote hasn't changed - just update the lock timestamps
 				if item == nil {
@@ -240,6 +249,15 @@ func Fetch(cfgPath, lockPath string, ids []string) int {
 		fmt.Printf("[FETCH] %s\n", ds.ID)
 		if err := f.Fetch(ctx, ds.Source, ds.Target); err != nil {
 			fmt.Printf("[ERR ] %s: fetch: %v\n", ds.ID, err)
+			fmt.Printf("[INFO] %s: source may be inaccessible - please verify the source configuration\n", ds.ID)
+			// Record the failure in the lock file
+			item := lk.Items[ds.ID]
+			if item == nil {
+				item = &LockItem{}
+				lk.Items[ds.ID] = item
+			}
+			item.InaccessibleAt = &now
+			item.InaccessibleError = err.Error()
 			if exit == 0 {
 				exit = 1
 			}
@@ -258,8 +276,9 @@ func Fetch(cfgPath, lockPath string, ids []string) int {
 		}
 
 		// Compute local file hash and update lockfile
+		// Clear inaccessible status since fetch succeeded
 		h, _ := HashFile(ds.Target)
-		lk.Items[ds.ID] = &LockItem{LocalSHA256: h, RemoteFingerprint: fp, CheckedAt: &now}
+		lk.Items[ds.ID] = &LockItem{LocalSHA256: h, RemoteFingerprint: fp, CheckedAt: &now, InaccessibleAt: nil, InaccessibleError: ""}
 	}
 
 	// Write updated lockfile back to disk

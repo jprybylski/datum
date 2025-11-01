@@ -132,4 +132,49 @@ func TestWriteLock(t *testing.T) {
 			t.Error("writeLock() expected error for non-existent directory, got nil")
 		}
 	})
+
+	t.Run("write and read inaccessible fields with special characters", func(t *testing.T) {
+		lockPath := filepath.Join(tmpDir, "inaccessible.lock.yaml")
+		now := time.Now().UTC()
+
+		// Create error message with special characters that might appear on Windows
+		// Including backslashes, quotes, and newlines
+		errorMsg := `failed to fetch: network error
+path: C:\Users\test\file.txt
+status: "connection timeout"`
+
+		lk := &Lock{
+			Version:     1,
+			LastChecked: &now,
+			Items: map[string]*LockItem{
+				"dataset1": {
+					LocalSHA256:       "hash123",
+					RemoteFingerprint: "fp456",
+					CheckedAt:         &now,
+					InaccessibleAt:    &now,
+					InaccessibleError: errorMsg,
+				},
+			},
+		}
+
+		// Write it
+		if err := writeLock(lockPath, lk); err != nil {
+			t.Fatalf("writeLock() error = %v", err)
+		}
+
+		// Read it back
+		readLk, err := readLock(lockPath)
+		if err != nil {
+			t.Fatalf("readLock() error = %v", err)
+		}
+
+		// Verify inaccessible fields are preserved
+		item := readLk.Items["dataset1"]
+		if item.InaccessibleAt == nil {
+			t.Error("InaccessibleAt should not be nil")
+		}
+		if item.InaccessibleError != errorMsg {
+			t.Errorf("InaccessibleError = %q, want %q", item.InaccessibleError, errorMsg)
+		}
+	})
 }
