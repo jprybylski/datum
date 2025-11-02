@@ -1,0 +1,11 @@
+{
+  "app_name": "Example Application",
+  "version": "1.0.0",
+  "environment": "development",
+  "features": {
+    "authentication": true,
+    "analytics": false,
+    "beta_features": true
+  },
+  "note": "This is a local backup configuration file used when the remote source is unavailable"
+}

@@ -152,12 +152,38 @@ defaults:
 datasets:
   - id: unique_identifier     # Unique ID for this dataset
     desc: Human-readable description
-    source:                   # Where to get the data
+    source:                   # Where to get the data (single source)
       type: http              # Handler type (http, file, git, command)
       url: https://...        # Handler-specific fields
     target: path/to/local/file.csv  # Where to save locally
     policy: update            # Override default policy (optional)
 ```
+
+### Multi-Source Configuration
+
+Datum supports specifying multiple sources with automatic fallback. If the first source fails, datum will try subsequent sources in order:
+
+```yaml
+datasets:
+  - id: my_data
+    desc: Data with fallback sources
+    sources:                  # Note: "sources" (plural) instead of "source"
+      - type: http            # Primary source
+        url: https://primary.example.com/data.csv
+      - type: http            # Backup source (used if primary fails)
+        url: https://backup.example.com/data.csv
+      - type: file            # Local fallback
+        path: ./cache/data.csv
+    target: data/my_data.csv
+```
+
+**Key points:**
+- Use either `source:` (single) or `sources:` (multiple), but not both
+- Sources are tried in the order they are listed
+- The final policy judgment is applied after all sources have been attempted
+- Useful for high availability, geographic redundancy, and offline development
+
+See the [Multi-Source Example](examples/multi-source/) for more details.
 
 ### Policy Options
 
@@ -655,7 +681,46 @@ datum --config .data.yaml fetch
 datum --config .data.yaml check
 ```
 
-### Example 5: Multiple Datasets with Different Policies
+### Example 5: Multi-Source with Fallback
+
+From [`examples/multi-source/.data.yaml`](examples/multi-source/.data.yaml):
+
+```yaml
+version: 1
+datasets:
+  # Fallback from primary HTTP source to backup HTTP source
+  - id: cdc_wtage_with_backup
+    desc: CDC weight-for-age data with fallback source
+    sources:
+      - type: http
+        url: https://www.cdc.gov/growthcharts/data/zscore/wtage.csv
+      - type: http
+        url: https://example.com/backup/wtage.csv
+    target: data/wtage.csv
+    policy: fail
+
+  # Fallback from HTTP to local file
+  - id: config_with_local_fallback
+    desc: Configuration file with local fallback
+    sources:
+      - type: http
+        url: https://config.example.com/app-config.json
+      - type: file
+        path: ./backups/app-config.json
+    target: data/app-config.json
+    policy: update
+```
+
+This example demonstrates multi-source functionality where datum automatically falls back to alternative sources if the primary source fails. This is useful for high availability, geographic redundancy, and offline development workflows.
+
+**Try it:**
+```bash
+cd examples/multi-source
+datum --config .data.yaml fetch
+datum --config .data.yaml check
+```
+
+### Example 6: Multiple Datasets with Different Policies
 
 From [`examples/multi-policy/.data.yaml`](examples/multi-policy/.data.yaml):
 

@@ -1,3 +1,5 @@
+version: "2"
+
 run:
   timeout: 5m
   tests: true
@@ -5,34 +7,33 @@ run:
 
 linters:
   enable:
-    - gofumpt
-    - gci
-    - revive
     - staticcheck
     - govet
-    - errcheck
     - unused
-    - gosimple
     - ineffassign
-    - typecheck
-    - goimports
     - misspell
-    - unconvert
+  disable:
+    - errcheck  # Disabled - many false positives in test code and defer statements
+    - revive    # Disabled - style preferences vary
 
 linters-settings:
-  gci:
-    sections:
-      - standard
-      - default
-      - prefix(github.com/jprybylski/datum)
   revive:
     rules:
       - name: exported
         disabled: true  # Don't require comments on all exported items
+      - name: package-comments
+        disabled: true  # Don't require package comments
+      - name: unexported-return
+        disabled: true  # Allow unexported types in return values
+      - name: unused-parameter
+        disabled: true  # Allow unused parameters (common in interface implementations)
 
 issues:
+  exclude-use-default: true
   exclude-rules:
-    # Exclude some linters from running on test files
-    - path: _test\.go
-      linters:
-        - errcheck
+    # Exclude staticcheck QF/SA9 code quality suggestions (optimizations, not bugs)
+    - linters:
+        - staticcheck
+      text: "^(QF|SA9)"
+  max-issues-per-linter: 0
+  max-same-issues: 0

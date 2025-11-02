@@ -1,0 +1,62 @@
+version: 1
+
+defaults:
+  policy: fail
+  algo: sha256
+
+datasets:
+  # Example 1: Fallback from primary HTTP source to backup HTTP source
+  - id: cdc_wtage_with_backup
+    desc: CDC weight-for-age data with fallback source
+    sources:
+      # Primary source: Official CDC server
+      - type: http
+        url: https://www.cdc.gov/growthcharts/data/zscore/wtage.csv
+      # Backup source: Alternative mirror (example - would need real backup URL)
+      - type: http
+        url: https://example.com/backup/wtage.csv
+    target: data/wtage.csv
+    policy: fail
+
+  # Example 2: Fallback from HTTP to local file
+  # Useful for offline development or when remote source is temporarily unavailable
+  - id: config_with_local_fallback
+    desc: Configuration file with local fallback
+    sources:
+      # Primary: Fetch from remote configuration server
+      - type: http
+        url: https://config.example.com/app-config.json
+      # Fallback: Use local cached version
+      - type: file
+        path: ./backups/app-config.json
+    target: data/app-config.json
+    policy: update
+
+  # Example 3: Multiple HTTP mirrors for reliability
+  - id: data_from_mirrors
+    desc: Data fetched from multiple mirror servers
+    sources:
+      - type: http
+        url: https://mirror1.example.com/dataset.csv
+      - type: http
+        url: https://mirror2.example.com/dataset.csv
+      - type: http
+        url: https://mirror3.example.com/dataset.csv
+    target: data/dataset.csv
+    policy: update
+
+  # Example 4: Command fallback
+  # Try to download with curl, fall back to wget
+  - id: download_with_tools
+    desc: Download using multiple command-line tools
+    sources:
+      # Try curl first
+      - type: command
+        fingerprint_cmd: "curl -sI https://example.com/data.json | grep -i etag | cut -d' ' -f2"
+        fetch_cmd: "curl -sL https://example.com/data.json -o {{dest}}"
+      # Fall back to wget
+      - type: command
+        fingerprint_cmd: "wget -q --spider -S https://example.com/data.json 2>&1 | grep -i etag | awk '{print $2}'"
+        fetch_cmd: "wget -q https://example.com/data.json -O {{dest}}"
+    target: data/downloaded.json
+    policy: log

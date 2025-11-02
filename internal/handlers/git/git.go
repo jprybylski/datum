@@ -210,11 +210,11 @@ func blobForPathAtCommit(repo *git.Repository, commit *object.Commit, filePath s
 	if err != nil {
 		return "", nil, fmt.Errorf("git: file %q not found at %s", filePath, commit.Hash.String())
 	}
-	rd, err := f.Blob.Reader()
+	rd, err := f.Reader()
 	if err != nil {
 		return "", nil, err
 	}
-	return f.Blob.Hash.String(), rd, nil
+	return f.Hash.String(), rd, nil
 }
 
 func defaultCacheDir() string {
