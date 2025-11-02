@@ -807,8 +807,8 @@ Yes, commit both `.data.yaml` and `.data.lock.yaml` to version control. This ens
 
 ## License
 
-[Your License Here]
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Contributing
 
-[Contribution guidelines here]
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our development process, coding standards, and how to submit pull requests.
