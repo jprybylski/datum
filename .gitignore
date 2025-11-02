@@ -12,3 +12,6 @@ coverage.out
 
 # Temporary files
 *.tmp
+
+# AI assistant documentation
+CLAUDE.md
