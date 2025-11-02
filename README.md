@@ -94,7 +94,7 @@ This checks if the remote data has changed. Based on your policy:
 
 ### Prerequisites
 
-- Go 1.22 or later
+- Go 1.23 or later
 - Git (if you want git repository support)
 
 ### Build from Source
