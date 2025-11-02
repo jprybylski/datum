@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/jprybylski/datum/actions/workflows/ci.yml/badge.svg)](https://github.com/jprybylski/datum/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/jprybylski/datum/branch/main/graph/badge.svg)](https://codecov.io/gh/jprybylski/datum)
-[![Go Report Card](https://goreportcard.com/badge/github.com/jprybylski/datum)](https://goreportcard.com/report/github.com/jprybylski/datum)
+[![Go Report Card](https://goreportcard.com/badge/github.com/jprybylski/datum?style=flat)](https://goreportcard.com/report/github.com/jprybylski/datum)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/jprybylski/datum)](https://github.com/jprybylski/datum/blob/main/go.mod)
 
 **Datum** is a data pinning tool that tracks external data sources with cryptographic fingerprints. It helps ensure that your project's external dependencies (files, URLs, git repositories) haven't changed unexpectedly.
