@@ -294,6 +294,47 @@ Datum uses two files:
 1. **`.data.yaml`** - Your configuration (version controlled)
 2. **`.data.lock.yaml`** - Generated lockfile with fingerprints (version controlled)
 
+### IDE Support with JSON Schema
+
+Datum provides a JSON Schema file (`data-schema.json`) for IDE autocomplete, validation, and documentation. To use it:
+
+**VS Code:**
+
+Add this to the top of your `.data.yaml` file:
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/jprybylski/datum/main/data-schema.json
+```
+
+Or configure it globally in VS Code settings:
+```json
+{
+  "yaml.schemas": {
+    "https://raw.githubusercontent.com/jprybylski/datum/main/data-schema.json": ".data.yaml"
+  }
+}
+```
+
+**JetBrains IDEs (IntelliJ, PyCharm, etc.):**
+
+1. Go to Settings → Languages & Frameworks → Schemas and DTDs → JSON Schema Mappings
+2. Add a new mapping:
+   - Name: "Datum Configuration"
+   - Schema URL: `https://raw.githubusercontent.com/jprybylski/datum/main/data-schema.json`
+   - File path pattern: `.data.yaml`
+
+**Local Schema:**
+
+For offline use, reference the schema file locally:
+```yaml
+# yaml-language-server: $schema=./data-schema.json
+```
+
+The schema provides:
+- Autocomplete for all fields and values
+- Validation of data types and required fields
+- Documentation on hover
+- Handler-specific field validation based on `type`
+
 ### Configuration File Structure
 
 ```yaml

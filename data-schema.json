@@ -1,0 +1,206 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/jprybylski/datum/data-schema.json",
+  "title": "Datum Configuration",
+  "description": "Configuration schema for Datum data pinning tool",
+  "type": "object",
+  "required": ["version", "datasets"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "description": "Configuration format version",
+      "enum": [1],
+      "default": 1
+    },
+    "defaults": {
+      "type": "object",
+      "description": "Default settings applied to all datasets",
+      "properties": {
+        "policy": {
+          "type": "string",
+          "description": "Default policy for handling data changes",
+          "enum": ["fail", "update", "log"],
+          "default": "fail"
+        },
+        "algo": {
+          "type": "string",
+          "description": "Hashing algorithm for fingerprints",
+          "enum": ["sha256"],
+          "default": "sha256"
+        }
+      }
+    },
+    "datasets": {
+      "type": "array",
+      "description": "List of datasets to track",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "desc", "target"],
+        "oneOf": [
+          {
+            "required": ["source"]
+          },
+          {
+            "required": ["sources"]
+          }
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique identifier for this dataset",
+            "pattern": "^[a-zA-Z0-9_-]+$"
+          },
+          "desc": {
+            "type": "string",
+            "description": "Human-readable description of the dataset"
+          },
+          "source": {
+            "description": "Single data source (use either 'source' or 'sources', not both)",
+            "oneOf": [
+              {
+                "$ref": "#/definitions/httpSource"
+              },
+              {
+                "$ref": "#/definitions/fileSource"
+              },
+              {
+                "$ref": "#/definitions/gitSource"
+              },
+              {
+                "$ref": "#/definitions/commandSource"
+              }
+            ]
+          },
+          "sources": {
+            "type": "array",
+            "description": "Multiple data sources with automatic fallback (use either 'source' or 'sources', not both)",
+            "minItems": 1,
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/definitions/httpSource"
+                },
+                {
+                  "$ref": "#/definitions/fileSource"
+                },
+                {
+                  "$ref": "#/definitions/gitSource"
+                },
+                {
+                  "$ref": "#/definitions/commandSource"
+                }
+              ]
+            }
+          },
+          "target": {
+            "type": "string",
+            "description": "Local path where the data will be saved"
+          },
+          "policy": {
+            "type": "string",
+            "description": "Override default policy for this dataset",
+            "enum": ["fail", "update", "log"]
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "httpSource": {
+      "type": "object",
+      "description": "HTTP/HTTPS URL source",
+      "required": ["type", "url"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["http"],
+          "description": "HTTP handler for fetching data from URLs"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "HTTP or HTTPS URL to fetch data from",
+          "pattern": "^https?://"
+        }
+      },
+      "additionalProperties": false
+    },
+    "fileSource": {
+      "type": "object",
+      "description": "Local or network file source",
+      "required": ["type", "path"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["file"],
+          "description": "File handler for copying local files"
+        },
+        "path": {
+          "type": "string",
+          "description": "Absolute or relative path to the source file"
+        }
+      },
+      "additionalProperties": false
+    },
+    "gitSource": {
+      "type": "object",
+      "description": "Git repository source (requires build with -tags git)",
+      "required": ["type", "url", "ref", "path"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["git"],
+          "description": "Git handler for fetching specific files from repositories"
+        },
+        "url": {
+          "type": "string",
+          "description": "Git repository URL (HTTPS or SSH)",
+          "pattern": "^(https?://|git@|git://)"
+        },
+        "ref": {
+          "type": "string",
+          "description": "Branch name or tag to fetch from (e.g., 'main', 'v1.0.0')"
+        },
+        "path": {
+          "type": "string",
+          "description": "Path to the file within the repository"
+        }
+      },
+      "additionalProperties": false
+    },
+    "commandSource": {
+      "type": "object",
+      "description": "Custom command source for executing shell commands",
+      "required": ["type", "fingerprint_cmd", "fetch_cmd"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["command"],
+          "description": "Command handler for executing shell commands"
+        },
+        "fingerprint_cmd": {
+          "type": "string",
+          "description": "Shell command to compute the fingerprint (output used as fingerprint)"
+        },
+        "fetch_cmd": {
+          "type": "string",
+          "description": "Shell command to fetch the data. Template variables: {{url}}, {{path}}, {{ref}}, {{dest}}. DEST env var also available."
+        },
+        "url": {
+          "type": "string",
+          "description": "Optional URL value for use in template variables {{url}}"
+        },
+        "path": {
+          "type": "string",
+          "description": "Optional path value for use in template variables {{path}}"
+        },
+        "ref": {
+          "type": "string",
+          "description": "Optional ref value for use in template variables {{ref}}"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
