@@ -22,6 +22,10 @@ Think of it as a "lockfile" for external data sources, similar to how `package-l
 - [Project Structure](#project-structure)
 - [Development Guide](#development-guide)
 - [Examples](#examples)
+- [FAQ](#faq)
+- [AI Acknowledgment](#ai-acknowledgment)
+- [License](#license)
+- [Contributing](#contributing)
 
 ## What Does Datum Do?
 
@@ -804,6 +808,18 @@ Yes, commit both `.data.yaml` and `.data.lock.yaml` to version control. This ens
 - Team members have the same data versions
 - Historical record of when data changed
 - Reproducible builds
+
+## AI Acknowledgment
+
+This project was developed with assistance from Claude (Anthropic's AI assistant). AI assistance was used for:
+
+- Code generation and implementation
+- Documentation writing and structuring
+- Test case development
+- Code review and refactoring suggestions
+- Build script creation
+
+All AI-generated content has been reviewed, tested, and modified by the project maintainer to ensure quality, correctness, and alignment with project goals.
 
 ## License
 
