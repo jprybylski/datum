@@ -101,19 +101,11 @@ func (h *handler) Fetch(_ context.Context, src registry.Source, dest string) err
 
 // --- helpers ---
 
-func parseGitSource(src registry.Source) (repoURL string, ref plumbing.ReferenceName, path string, err error) {
+func parseGitSource(src registry.Source) (repoURL, ref, path string, err error) {
 	if src.URL == "" || src.Path == "" || src.Ref == "" {
 		return "", "", "", errors.New("git: require source.url, source.ref, source.path")
 	}
-	repoURL = src.URL
-	if strings.HasPrefix(src.Ref, "refs/") {
-		ref = plumbing.ReferenceName(src.Ref)
-	} else {
-		// Try branch first; resolveRefCommit will fall back to tag.
-		ref = plumbing.NewBranchReferenceName(src.Ref)
-	}
-	path = filepath.ToSlash(src.Path)
-	return repoURL, ref, path, nil
+	return src.URL, src.Ref, filepath.ToSlash(src.Path), nil
 }
 
 func ensureRepo(repoURL string) (*git.Repository, error) {
@@ -173,32 +165,56 @@ func fetchAllRefs(repoURL string, repo *git.Repository) error {
 	return err2
 }
 
-func resolveRefCommit(repo *git.Repository, name plumbing.ReferenceName) (*object.Commit, error) {
-	ref, err := repo.Reference(name, true)
-	if err != nil {
-		// If it's a branch ref, try the remote tracking ref
-		if strings.HasPrefix(string(name), "refs/heads/") {
-			remoteName := strings.Replace(string(name), "refs/heads/", "refs/remotes/origin/", 1)
-			ref, err = repo.Reference(plumbing.ReferenceName(remoteName), true)
+// resolveRefCommit resolves a user-supplied ref (branch name, tag name, or a fully-qualified
+// "refs/..." name) to a commit.
+//
+// Branches are cached locally under refs/remotes/origin/* (see fetchAllRefs), not refs/heads/*,
+// since the local repo is a plain fetch cache rather than a real clone. So when we don't know
+// upfront whether a bare ref names a branch or a tag, we try, in order: a local branch name (in
+// case some other tool populated refs/heads/* directly), the origin remote-tracking branch, then
+// a tag. A fully-qualified "refs/heads/X" gets the same remote-tracking fallback, since a user
+// writing that literally almost certainly means "the X branch". Any other fully-qualified ref
+// (e.g. "refs/tags/X") is used as-is.
+//
+// Note: this must try all applicable candidates regardless of *why* an earlier one failed - an
+// earlier version tried to shortcut this by only falling back to a tag lookup when the ref
+// "didn't look like" a refs/heads/* path, but by the time the ref reached here it had always
+// already been normalized to refs/heads/*, so that fallback could never trigger and tags were
+// silently unresolvable.
+func resolveRefCommit(repo *git.Repository, ref string) (*object.Commit, error) {
+	var candidates []plumbing.ReferenceName
+	switch {
+	case strings.HasPrefix(ref, "refs/heads/"):
+		branch := strings.TrimPrefix(ref, "refs/heads/")
+		candidates = []plumbing.ReferenceName{
+			plumbing.ReferenceName(ref),
+			plumbing.ReferenceName("refs/remotes/origin/" + branch),
 		}
-		// If not a branch or remote didn't work, try tag
-		if err != nil && !strings.HasPrefix(string(name), "refs/") {
-			if ref2, err2 := repo.Reference(plumbing.NewTagReferenceName(name.String()), true); err2 == nil {
-				ref = ref2
-				err = nil
-			}
+	case strings.HasPrefix(ref, "refs/"):
+		candidates = []plumbing.ReferenceName{plumbing.ReferenceName(ref)}
+	default:
+		candidates = []plumbing.ReferenceName{
+			plumbing.NewBranchReferenceName(ref),
+			plumbing.ReferenceName("refs/remotes/origin/" + ref),
+			plumbing.NewTagReferenceName(ref),
 		}
-		// Still no luck?
+	}
+
+	var lastErr error
+	for _, name := range candidates {
+		r, err := repo.Reference(name, true)
 		if err != nil {
-			return nil, fmt.Errorf("git: cannot resolve ref %q", name)
+			lastErr = err
+			continue
 		}
+		hash := r.Hash()
+		// Peel annotated tags
+		if tobj, err := repo.TagObject(hash); err == nil {
+			hash = tobj.Target
+		}
+		return repo.CommitObject(hash)
 	}
-	hash := ref.Hash()
-	// Peel annotated tags
-	if tobj, err := repo.TagObject(hash); err == nil {
-		hash = tobj.Target
-	}
-	return repo.CommitObject(hash)
+	return nil, fmt.Errorf("git: cannot resolve ref %q: %w", ref, lastErr)
 }
 
 func blobForPathAtCommit(repo *git.Repository, commit *object.Commit, filePath string) (blobSHA string, r io.ReadCloser, err error) {
