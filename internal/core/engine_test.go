@@ -45,6 +45,15 @@ func init() {
 	registry.Register(&mockFailHandler{})
 }
 
+// mustWriteFile writes test fixture content, failing the test immediately if the write fails
+// rather than letting it surface later as a confusing "file not found" from whatever reads it.
+func mustWriteFile(t *testing.T, path string, data []byte) {
+	t.Helper()
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("failed to write test fixture %s: %v", path, err)
+	}
+}
+
 func TestCheck(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -59,7 +68,7 @@ datasets:
     target: ` + targetFile + `
     policy: update
 `
-		os.WriteFile(configPath, []byte(configContent), 0o644)
+		mustWriteFile(t, configPath, []byte(configContent))
 		lockPath := filepath.Join(tmpDir, "lock.yaml")
 
 		code := Check(configPath, lockPath)
@@ -71,7 +80,7 @@ datasets:
 	t.Run("invalid config", func(t *testing.T) {
 		configPath := filepath.Join(tmpDir, "invalid.yaml")
 		lockPath := filepath.Join(tmpDir, "lock2.yaml")
-		os.WriteFile(configPath, []byte("invalid: yaml: syntax:"), 0o644)
+		mustWriteFile(t, configPath, []byte("invalid: yaml: syntax:"))
 
 		code := Check(configPath, lockPath)
 		if code != 2 {
@@ -92,7 +101,7 @@ datasets:
     target: ` + targetFile + `
     policy: fail
 `
-		os.WriteFile(configPath, []byte(configContent), 0o644)
+		mustWriteFile(t, configPath, []byte(configContent))
 
 		// Create a lockfile with an old fingerprint
 		lockContent := `version: 1
@@ -101,7 +110,7 @@ items:
     local_sha256: old_hash
     remote_fingerprint: old_fingerprint
 `
-		os.WriteFile(lockPath, []byte(lockContent), 0o644)
+		mustWriteFile(t, lockPath, []byte(lockContent))
 
 		// Run Check - should fail since fingerprint changed
 		code := Check(configPath, lockPath)
@@ -142,7 +151,7 @@ datasets:
     target: ` + targetFile + `
     policy: log
 `
-		os.WriteFile(configPath, []byte(configContent), 0o644)
+		mustWriteFile(t, configPath, []byte(configContent))
 
 		// Create a lockfile with an old fingerprint
 		lockContent := `version: 1
@@ -151,7 +160,7 @@ items:
     local_sha256: old_hash
     remote_fingerprint: old_fingerprint
 `
-		os.WriteFile(lockPath, []byte(lockContent), 0o644)
+		mustWriteFile(t, lockPath, []byte(lockContent))
 
 		// Run Check - should succeed (log doesn't fail)
 		code := Check(configPath, lockPath)
@@ -192,7 +201,7 @@ datasets:
     target: ` + targetFile + `
     policy: update
 `
-		os.WriteFile(configPath, []byte(configContent), 0o644)
+		mustWriteFile(t, configPath, []byte(configContent))
 
 		// Run Check - should fail since fetch fails
 		code := Check(configPath, lockPath)
@@ -236,7 +245,7 @@ datasets:
       type: mock
     target: ` + targetFile + `
 `
-		os.WriteFile(configPath, []byte(configContent), 0o644)
+		mustWriteFile(t, configPath, []byte(configContent))
 		lockPath := filepath.Join(tmpDir, "fetchlock.yaml")
 
 		code := Fetch(configPath, lockPath, nil)
@@ -252,7 +261,7 @@ datasets:
 	t.Run("invalid config", func(t *testing.T) {
 		configPath := filepath.Join(tmpDir, "finvalid.yaml")
 		lockPath := filepath.Join(tmpDir, "flock.yaml")
-		os.WriteFile(configPath, []byte("bad: yaml: syntax:"), 0o644)
+		mustWriteFile(t, configPath, []byte("bad: yaml: syntax:"))
 
 		code := Fetch(configPath, lockPath, nil)
 		if code != 2 {
@@ -272,7 +281,7 @@ datasets:
       type: mockfail
     target: ` + targetFile + `
 `
-		os.WriteFile(configPath, []byte(configContent), 0o644)
+		mustWriteFile(t, configPath, []byte(configContent))
 
 		// Run Fetch - should fail since fetch fails
 		code := Fetch(configPath, lockPath, nil)
