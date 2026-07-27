@@ -123,3 +123,9 @@ jobs:
         cd examples/git-one-file
         ../../datum --config .data.yaml fetch
         ../../datum --config .data.yaml check
+
+    - name: Test directory-sync example (File handler, directory source)
+      run: |
+        cd examples/directory-sync
+        ../../datum --config .data.yaml fetch
+        ../../datum --config .data.yaml check

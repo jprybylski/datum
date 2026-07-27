@@ -113,6 +113,179 @@ func TestFileExists(t *testing.T) {
 	}
 }
 
+func TestHashDir(t *testing.T) {
+	t.Run("deterministic and order-independent", func(t *testing.T) {
+		dirA := t.TempDir()
+		mustWriteFile(t, filepath.Join(dirA, "a.txt"), []byte("aaa"))
+		mustWriteFile(t, filepath.Join(dirA, "b.txt"), []byte("bbb"))
+		if err := os.MkdirAll(filepath.Join(dirA, "sub"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		mustWriteFile(t, filepath.Join(dirA, "sub", "c.txt"), []byte("ccc"))
+
+		dirB := t.TempDir()
+		// Same contents, written in a different order.
+		if err := os.MkdirAll(filepath.Join(dirB, "sub"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		mustWriteFile(t, filepath.Join(dirB, "sub", "c.txt"), []byte("ccc"))
+		mustWriteFile(t, filepath.Join(dirB, "b.txt"), []byte("bbb"))
+		mustWriteFile(t, filepath.Join(dirB, "a.txt"), []byte("aaa"))
+
+		ha, err := HashDir(dirA)
+		if err != nil {
+			t.Fatalf("HashDir(dirA) error = %v", err)
+		}
+		hb, err := HashDir(dirB)
+		if err != nil {
+			t.Fatalf("HashDir(dirB) error = %v", err)
+		}
+		if ha != hb {
+			t.Errorf("HashDir() = %q for dirA, %q for dirB; want equal for identical contents", ha, hb)
+		}
+		if len(ha) != 64 {
+			t.Errorf("HashDir() length = %d, want 64 (sha256 hex)", len(ha))
+		}
+	})
+
+	t.Run("changes when a file's content changes", func(t *testing.T) {
+		dir := t.TempDir()
+		mustWriteFile(t, filepath.Join(dir, "a.txt"), []byte("original"))
+		h1, err := HashDir(dir)
+		if err != nil {
+			t.Fatalf("HashDir() error = %v", err)
+		}
+		mustWriteFile(t, filepath.Join(dir, "a.txt"), []byte("changed"))
+		h2, err := HashDir(dir)
+		if err != nil {
+			t.Fatalf("HashDir() error = %v", err)
+		}
+		if h1 == h2 {
+			t.Error("HashDir() did not change after file content changed")
+		}
+	})
+
+	t.Run("changes when a file is added", func(t *testing.T) {
+		dir := t.TempDir()
+		mustWriteFile(t, filepath.Join(dir, "a.txt"), []byte("aaa"))
+		h1, err := HashDir(dir)
+		if err != nil {
+			t.Fatalf("HashDir() error = %v", err)
+		}
+		mustWriteFile(t, filepath.Join(dir, "b.txt"), []byte("bbb"))
+		h2, err := HashDir(dir)
+		if err != nil {
+			t.Fatalf("HashDir() error = %v", err)
+		}
+		if h1 == h2 {
+			t.Error("HashDir() did not change after a file was added")
+		}
+	})
+
+	t.Run("changes when a file is renamed (same content, different manifest)", func(t *testing.T) {
+		dirA := t.TempDir()
+		mustWriteFile(t, filepath.Join(dirA, "a.txt"), []byte("same content"))
+		dirB := t.TempDir()
+		mustWriteFile(t, filepath.Join(dirB, "renamed.txt"), []byte("same content"))
+
+		ha, err := HashDir(dirA)
+		if err != nil {
+			t.Fatalf("HashDir(dirA) error = %v", err)
+		}
+		hb, err := HashDir(dirB)
+		if err != nil {
+			t.Fatalf("HashDir(dirB) error = %v", err)
+		}
+		if ha == hb {
+			t.Error("HashDir() should differ when file paths differ, even with identical content")
+		}
+	})
+
+	t.Run("empty directory", func(t *testing.T) {
+		dir := t.TempDir()
+		h, err := HashDir(dir)
+		if err != nil {
+			t.Fatalf("HashDir() on empty dir error = %v", err)
+		}
+		if len(h) != 64 {
+			t.Errorf("HashDir() length = %d, want 64", len(h))
+		}
+	})
+
+	t.Run("non-existent directory", func(t *testing.T) {
+		if _, err := HashDir("/nonexistent/dir/that/should/not/exist"); err == nil {
+			t.Error("HashDir() expected error for non-existent directory, got nil")
+		}
+	})
+}
+
+func TestDirManifest(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "z.txt"), []byte("z"))
+	mustWriteFile(t, filepath.Join(dir, "a.txt"), []byte("a"))
+	if err := os.MkdirAll(filepath.Join(dir, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWriteFile(t, filepath.Join(dir, "sub", "m.txt"), []byte("m"))
+
+	rels, err := DirManifest(dir)
+	if err != nil {
+		t.Fatalf("DirManifest() error = %v", err)
+	}
+	want := []string{"a.txt", "sub/m.txt", "z.txt"}
+	if len(rels) != len(want) {
+		t.Fatalf("DirManifest() = %v, want %v", rels, want)
+	}
+	for i := range want {
+		if rels[i] != want[i] {
+			t.Errorf("DirManifest()[%d] = %q, want %q (want sorted order)", i, rels[i], want[i])
+		}
+	}
+}
+
+func TestHashPath(t *testing.T) {
+	t.Run("file", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		f := filepath.Join(tmpDir, "f.txt")
+		mustWriteFile(t, f, []byte("content"))
+
+		want, err := HashFile(f)
+		if err != nil {
+			t.Fatalf("HashFile() error = %v", err)
+		}
+		got, err := HashPath(f)
+		if err != nil {
+			t.Fatalf("HashPath() error = %v", err)
+		}
+		if got != want {
+			t.Errorf("HashPath(file) = %q, want %q (same as HashFile)", got, want)
+		}
+	})
+
+	t.Run("directory", func(t *testing.T) {
+		dir := t.TempDir()
+		mustWriteFile(t, filepath.Join(dir, "f.txt"), []byte("content"))
+
+		want, err := HashDir(dir)
+		if err != nil {
+			t.Fatalf("HashDir() error = %v", err)
+		}
+		got, err := HashPath(dir)
+		if err != nil {
+			t.Fatalf("HashPath() error = %v", err)
+		}
+		if got != want {
+			t.Errorf("HashPath(dir) = %q, want %q (same as HashDir)", got, want)
+		}
+	})
+
+	t.Run("non-existent path", func(t *testing.T) {
+		if _, err := HashPath("/nonexistent/path"); err == nil {
+			t.Error("HashPath() expected error for non-existent path, got nil")
+		}
+	})
+}
+
 func TestFirstNonEmpty(t *testing.T) {
 	tests := []struct {
 		name string

@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../data-schema.json
+
+version: 1
+defaults:
+  policy: update
+  algo: sha256
+
+datasets:
+  - id: directory_dataset
+    desc: "Entire source-data/ directory tracked and synced as one dataset"
+    source:
+      type: file
+      path: source-data
+    target: synced-data
+    policy: update

@@ -148,7 +148,7 @@ func Check(cfgPath, lockPath string) int {
 		// Compute local file hash if the file exists
 		localHash := ""
 		if fileExists(ds.Target) {
-			if h, err := HashFile(ds.Target); err == nil {
+			if h, err := HashPath(ds.Target); err == nil {
 				localHash = h
 			} else {
 				fmt.Printf("[ERR ] %s: local hash: %v\n", ds.ID, err)
@@ -191,7 +191,7 @@ func Check(cfgPath, lockPath string) int {
 
 				// Update lockfile with new fingerprint and local hash
 				// Clear inaccessible status since fetch succeeded
-				h, err := HashFile(ds.Target)
+				h, err := HashPath(ds.Target)
 				if err != nil {
 					fmt.Printf("[WARN] %s: local hash after fetch: %v\n", ds.ID, err)
 				}
@@ -341,7 +341,7 @@ func Fetch(cfgPath, lockPath string, ids []string) int {
 
 		// Compute local file hash and update lockfile
 		// Clear inaccessible status since fetch succeeded
-		h, err := HashFile(ds.Target)
+		h, err := HashPath(ds.Target)
 		if err != nil {
 			fmt.Printf("[WARN] %s: local hash after fetch: %v\n", ds.ID, err)
 		}
