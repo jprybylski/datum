@@ -7,13 +7,13 @@ run:
 
 linters:
   enable:
+    - errcheck
     - staticcheck
     - govet
     - unused
     - ineffassign
     - misspell
   disable:
-    - errcheck  # Disabled - many false positives in test code and defer statements
     - revive    # Disabled - style preferences vary
 
   settings:
@@ -38,6 +38,12 @@ linters:
       - linters:
           - staticcheck
         text: "^(QF|SA9)"
+      # errcheck in test files is mostly setup boilerplate (os.WriteFile, w.Write) where a
+      # failure would already surface as a confusing downstream test failure; not worth the
+      # noise of checking every one. Production code still has errcheck fully enabled.
+      - linters:
+          - errcheck
+        path: _test\.go
 
 issues:
   max-issues-per-linter: 0
