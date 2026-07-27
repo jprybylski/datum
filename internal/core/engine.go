@@ -8,6 +8,74 @@ import (
 	"github.com/jprybylski/datum/internal/registry"
 )
 
+// sourceAttempt tries each source in order, calling attempt for each until one succeeds.
+//
+// This is the shared "try each source, fall back to the next on failure" loop used by both
+// Check() and Fetch() for both fingerprint-only and fetch+fingerprint operations. When there's
+// more than one source, it prints a [WARN] line for every failed attempt (with an optional
+// sub-step label, e.g. "fetch" vs "fingerprint after fetch") before moving to the next source.
+//
+// Returns the value from the first successful attempt, or the last (unwrapped) error if every
+// source failed. Callers are responsible for the final [ERR ] summary line and any error
+// wrapping they need for storage (e.g. LockItem.InaccessibleError), since those differ slightly
+// between Check() and Fetch().
+func sourceAttempt(dsID string, sources []registry.Source, attempt func(f registry.Fetcher, source registry.Source) (value, warnLabel string, err error)) (string, error) {
+	var lastErr error
+	for i, source := range sources {
+		f, ok := registry.Get(source.Type)
+		if !ok {
+			lastErr = fmt.Errorf("unknown source.type=%q", source.Type)
+			if len(sources) > 1 {
+				fmt.Printf("[WARN] %s: source %d/%d: %v (trying next source)\n", dsID, i+1, len(sources), lastErr)
+			}
+			continue
+		}
+
+		value, warnLabel, err := attempt(f, source)
+		if err != nil {
+			lastErr = err
+			if len(sources) > 1 {
+				if warnLabel != "" {
+					fmt.Printf("[WARN] %s: source %d/%d: %s: %v (trying next source)\n", dsID, i+1, len(sources), warnLabel, err)
+				} else {
+					fmt.Printf("[WARN] %s: source %d/%d: %v (trying next source)\n", dsID, i+1, len(sources), err)
+				}
+			}
+			continue
+		}
+
+		return value, nil
+	}
+	return "", lastErr
+}
+
+// fingerprintAttempt builds a sourceAttempt callback that just computes a fingerprint.
+func fingerprintAttempt(ctx context.Context) func(registry.Fetcher, registry.Source) (string, string, error) {
+	return func(f registry.Fetcher, source registry.Source) (string, string, error) {
+		fp, err := f.Fingerprint(ctx, source)
+		if err != nil {
+			return "", "fingerprint", err
+		}
+		return fp, "", nil
+	}
+}
+
+// fetchAttempt builds a sourceAttempt callback that fetches into dest, then re-fingerprints the
+// source so the lockfile records the fingerprint that actually corresponds to what was fetched.
+// A source only counts as succeeded if both steps succeed.
+func fetchAttempt(ctx context.Context, dest string) func(registry.Fetcher, registry.Source) (string, string, error) {
+	return func(f registry.Fetcher, source registry.Source) (string, string, error) {
+		if err := f.Fetch(ctx, source, dest); err != nil {
+			return "", "fetch", err
+		}
+		fp, err := f.Fingerprint(ctx, source)
+		if err != nil {
+			return "", "fingerprint after fetch", err
+		}
+		return fp, "", nil
+	}
+}
+
 // Check verifies all configured datasets against the lockfile according to their policies.
 //
 // This is the main verification function for datum. It loads the configuration and lockfile,
@@ -60,45 +128,13 @@ func Check(cfgPath, lockPath string) int {
 		// Get all sources for this dataset (supports both single and multiple sources)
 		sources := ds.GetSources()
 
-		// Try each source in order until one succeeds
-		var fp string
-		var lastErr error
-		sourceSucceeded := false
-
-		for i, source := range sources {
-			// Look up the handler for this source type (http, file, git, command)
-			f, ok := registry.Get(source.Type)
-			if !ok {
-				lastErr = fmt.Errorf("unknown source.type=%q", source.Type)
-				if len(sources) > 1 {
-					fmt.Printf("[WARN] %s: source %d/%d: %v (trying next source)\n", ds.ID, i+1, len(sources), lastErr)
-				}
-				continue
-			}
-
-			// Compute the current remote fingerprint
-			// Different handlers use different strategies (ETag, file hash, git SHA, etc.)
-			var err error
-			fp, err = f.Fingerprint(ctx, source)
-			if err != nil {
-				lastErr = err
-				if len(sources) > 1 {
-					fmt.Printf("[WARN] %s: source %d/%d: fingerprint: %v (trying next source)\n", ds.ID, i+1, len(sources), err)
-				}
-				continue
-			}
-
-			// Source succeeded!
-			sourceSucceeded = true
-			break
-		}
-
-		// If all sources failed, handle the error
-		if !sourceSucceeded {
+		// Compute the current remote fingerprint, trying each source in order until one succeeds
+		fp, err := sourceAttempt(ds.ID, sources, fingerprintAttempt(ctx))
+		if err != nil {
 			if len(sources) > 1 {
-				fmt.Printf("[ERR ] %s: all %d sources failed, last error: %v\n", ds.ID, len(sources), lastErr)
+				fmt.Printf("[ERR ] %s: all %d sources failed, last error: %v\n", ds.ID, len(sources), err)
 			} else {
-				fmt.Printf("[ERR ] %s: fingerprint: %v\n", ds.ID, lastErr)
+				fmt.Printf("[ERR ] %s: fingerprint: %v\n", ds.ID, err)
 			}
 			if exit == 0 {
 				exit = 1 // Operational error
@@ -130,40 +166,13 @@ func Check(cfgPath, lockPath string) int {
 			if stale || !fileExists(ds.Target) {
 				fmt.Printf("[UPD ] %s: refreshing\n", ds.ID)
 
-				// Try each source in order until one succeeds for fetching
-				fetchSucceeded := false
-				var fetchErr error
-				for i, source := range sources {
-					f, ok := registry.Get(source.Type)
-					if !ok {
-						fetchErr = fmt.Errorf("unknown source.type=%q", source.Type)
-						if len(sources) > 1 {
-							fmt.Printf("[WARN] %s: source %d/%d: %v (trying next source)\n", ds.ID, i+1, len(sources), fetchErr)
-						}
-						continue
-					}
-
-					if err := f.Fetch(ctx, source, ds.Target); err != nil {
-						fetchErr = err
-						if len(sources) > 1 {
-							fmt.Printf("[WARN] %s: source %d/%d: fetch: %v (trying next source)\n", ds.ID, i+1, len(sources), err)
-						}
-						continue
-					}
-
-					// Fetch succeeded! Now get the fingerprint from this source
-					if newFp, err := f.Fingerprint(ctx, source); err == nil {
-						fp = newFp
-					}
-					fetchSucceeded = true
-					break
-				}
-
-				if !fetchSucceeded {
+				// Fetch (and re-fingerprint) from the first source that succeeds at both steps
+				newFp, err := sourceAttempt(ds.ID, sources, fetchAttempt(ctx, ds.Target))
+				if err != nil {
 					if len(sources) > 1 {
-						fmt.Printf("[ERR ] %s: all %d sources failed to fetch, last error: %v\n", ds.ID, len(sources), fetchErr)
+						fmt.Printf("[ERR ] %s: all %d sources failed to fetch, last error: %v\n", ds.ID, len(sources), err)
 					} else {
-						fmt.Printf("[ERR ] %s: fetch: %v\n", ds.ID, fetchErr)
+						fmt.Printf("[ERR ] %s: fetch: %v\n", ds.ID, err)
 					}
 					fmt.Printf("[INFO] %s: source may be inaccessible - please verify the source configuration\n", ds.ID)
 					// Record the failure in the lock file
@@ -172,16 +181,20 @@ func Check(cfgPath, lockPath string) int {
 						lk.Items[ds.ID] = item
 					}
 					item.InaccessibleAt = &now
-					item.InaccessibleError = fetchErr.Error()
+					item.InaccessibleError = err.Error()
 					if exit == 0 {
 						exit = 1
 					}
 					continue
 				}
+				fp = newFp
 
 				// Update lockfile with new fingerprint and local hash
 				// Clear inaccessible status since fetch succeeded
-				h, _ := HashFile(ds.Target)
+				h, err := HashFile(ds.Target)
+				if err != nil {
+					fmt.Printf("[WARN] %s: local hash after fetch: %v\n", ds.ID, err)
+				}
 				lk.Items[ds.ID] = &LockItem{LocalSHA256: h, RemoteFingerprint: fp, CheckedAt: &now, InaccessibleAt: nil, InaccessibleError: ""}
 			} else {
 				// Remote hasn't changed - just update the lock timestamps
@@ -301,55 +314,15 @@ func Fetch(cfgPath, lockPath string, ids []string) int {
 		// Get all sources for this dataset (supports both single and multiple sources)
 		sources := ds.GetSources()
 
-		// Try each source in order until one succeeds
 		fmt.Printf("[FETCH] %s\n", ds.ID)
-		fetchSucceeded := false
-		var fp string
-		var lastErr error
 
-		for i, source := range sources {
-			// Look up the handler for this source type
-			f, ok := registry.Get(source.Type)
-			if !ok {
-				lastErr = fmt.Errorf("unknown source.type=%q", source.Type)
-				if len(sources) > 1 {
-					fmt.Printf("[WARN] %s: source %d/%d: %v (trying next source)\n", ds.ID, i+1, len(sources), lastErr)
-				}
-				continue
-			}
-
-			// Fetch the data from the source
-			if err := f.Fetch(ctx, source, ds.Target); err != nil {
-				lastErr = err
-				if len(sources) > 1 {
-					fmt.Printf("[WARN] %s: source %d/%d: fetch: %v (trying next source)\n", ds.ID, i+1, len(sources), err)
-				}
-				continue
-			}
-
-			// Compute fingerprint after fetching
-			// This ensures we record the exact state of what we just fetched
-			var err error
-			fp, err = f.Fingerprint(ctx, source)
-			if err != nil {
-				lastErr = err
-				if len(sources) > 1 {
-					fmt.Printf("[WARN] %s: source %d/%d: fingerprint after fetch: %v (trying next source)\n", ds.ID, i+1, len(sources), err)
-				}
-				continue
-			}
-
-			// Source succeeded!
-			fetchSucceeded = true
-			break
-		}
-
-		// If all sources failed, handle the error
-		if !fetchSucceeded {
+		// Fetch (and re-fingerprint) from the first source that succeeds at both steps
+		fp, err := sourceAttempt(ds.ID, sources, fetchAttempt(ctx, ds.Target))
+		if err != nil {
 			if len(sources) > 1 {
-				fmt.Printf("[ERR ] %s: all %d sources failed, last error: %v\n", ds.ID, len(sources), lastErr)
+				fmt.Printf("[ERR ] %s: all %d sources failed, last error: %v\n", ds.ID, len(sources), err)
 			} else {
-				fmt.Printf("[ERR ] %s: fetch: %v\n", ds.ID, lastErr)
+				fmt.Printf("[ERR ] %s: fetch: %v\n", ds.ID, err)
 			}
 			fmt.Printf("[INFO] %s: source may be inaccessible - please verify the source configuration\n", ds.ID)
 			// Record the failure in the lock file
@@ -359,7 +332,7 @@ func Fetch(cfgPath, lockPath string, ids []string) int {
 				lk.Items[ds.ID] = item
 			}
 			item.InaccessibleAt = &now
-			item.InaccessibleError = lastErr.Error()
+			item.InaccessibleError = err.Error()
 			if exit == 0 {
 				exit = 1
 			}
@@ -368,7 +341,10 @@ func Fetch(cfgPath, lockPath string, ids []string) int {
 
 		// Compute local file hash and update lockfile
 		// Clear inaccessible status since fetch succeeded
-		h, _ := HashFile(ds.Target)
+		h, err := HashFile(ds.Target)
+		if err != nil {
+			fmt.Printf("[WARN] %s: local hash after fetch: %v\n", ds.ID, err)
+		}
 		lk.Items[ds.ID] = &LockItem{LocalSHA256: h, RemoteFingerprint: fp, CheckedAt: &now, InaccessibleAt: nil, InaccessibleError: ""}
 	}
 

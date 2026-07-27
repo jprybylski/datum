@@ -257,19 +257,40 @@ func gitAuth(raw string) gittransport.AuthMethod {
 		user = u.User.Username()
 	}
 
+	// Leaving HostKeyCallback unset lets go-git apply its own secure default
+	// (ssh.NewKnownHostsCallback, which reads SSH_KNOWN_HOSTS or ~/.ssh/known_hosts).
+	// Only bypass host-key verification if the user explicitly opts in - doing this
+	// unconditionally would silently expose every SSH fetch to MITM attacks.
+	insecure := insecureHostKeyCallback()
+
 	if cb, err := gitssh.NewSSHAgentAuth(user); err == nil {
-		cb.HostKeyCallback = xssh.InsecureIgnoreHostKey()
+		if insecure != nil {
+			cb.HostKeyCallback = insecure
+		}
 		return cb
 	}
 
 	if key := os.Getenv("GIT_SSH_KEY"); key != "" {
 		passphrase := os.Getenv("GIT_SSH_PASSPHRASE")
 		if pk, err := gitssh.NewPublicKeysFromFile(user, key, passphrase); err == nil {
-			pk.HostKeyCallback = xssh.InsecureIgnoreHostKey()
+			if insecure != nil {
+				pk.HostKeyCallback = insecure
+			}
 			return pk
 		}
 	}
 	return nil
+}
+
+// insecureHostKeyCallback returns a callback that skips SSH host-key verification, but only
+// when explicitly requested via DATUM_GIT_INSECURE_HOST_KEY=1. Returns nil otherwise, so callers
+// leave HostKeyCallback unset and get go-git's secure known_hosts-based default.
+func insecureHostKeyCallback() xssh.HostKeyCallback {
+	if os.Getenv("DATUM_GIT_INSECURE_HOST_KEY") != "1" {
+		return nil
+	}
+	fmt.Fprintln(os.Stderr, "[WARN] git: SSH host key verification disabled via DATUM_GIT_INSECURE_HOST_KEY=1 (vulnerable to MITM)")
+	return xssh.InsecureIgnoreHostKey()
 }
 
 func init() { registry.Register(New()) }

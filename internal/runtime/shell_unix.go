@@ -13,6 +13,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 )
 
@@ -33,10 +34,14 @@ func RunShell(ctx context.Context, cmdline string, env []string) (string, error)
 	// CommandContext creates a command that will be killed if ctx is cancelled
 	cmd := exec.CommandContext(ctx, "sh", "-c", cmdline)
 
-	// Append custom environment variables if provided
-	// Note: This adds to the existing environment, not replaces it
+	// Append custom environment variables on top of the inherited environment.
+	//
+	// Go pitfall: cmd.Env starts nil, and *assigning* to it (even via append) replaces the
+	// entire child environment rather than adding to it - os.Exec only falls back to the
+	// parent's environment when Env is left nil. So we must seed it with os.Environ() first,
+	// or PATH/HOME/etc. would disappear and break any command that isn't a shell builtin.
 	if env != nil {
-		cmd.Env = append(cmd.Env, env...)
+		cmd.Env = append(os.Environ(), env...)
 	}
 
 	// CombinedOutput runs the command and captures both stdout and stderr

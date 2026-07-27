@@ -523,6 +523,14 @@ export GIT_SSH_KEY=/path/to/private/key
 export GIT_SSH_PASSPHRASE=optional-passphrase
 ```
 
+SSH host keys are verified against `SSH_KNOWN_HOSTS` (or `~/.ssh/known_hosts` /
+`/etc/ssh/ssh_known_hosts`) by default, same as the `ssh` CLI. If a host isn't in your
+known_hosts file, the fetch will fail rather than silently trusting it. For CI environments or
+throwaway containers where that verification isn't practical, you can explicitly disable it:
+```bash
+export DATUM_GIT_INSECURE_HOST_KEY=1  # skips SSH host-key verification - MITM risk, use with care
+```
+
 ## Architecture and Implementation
 
 The codebase demonstrates several important Go patterns and concepts:
