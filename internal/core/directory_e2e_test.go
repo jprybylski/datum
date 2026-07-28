@@ -5,6 +5,7 @@ package core_test
 // internal/core - without creating an import cycle in an internal test file.
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -44,7 +45,7 @@ datasets:
 	lockPath := filepath.Join(tmpDir, ".data.lock.yaml")
 
 	// First Check with update policy should fetch the whole directory.
-	if code := core.Check(configPath, lockPath); code != 0 {
+	if code := core.Check(context.Background(), configPath, lockPath, 1); code != 0 {
 		t.Fatalf("Check() = %d, want 0", code)
 	}
 	got, err := os.ReadFile(filepath.Join(targetDir, "sub", "b.txt"))
@@ -53,7 +54,7 @@ datasets:
 	}
 
 	// A repeat Check with nothing changed should be a no-op (up-to-date).
-	if code := core.Check(configPath, lockPath); code != 0 {
+	if code := core.Check(context.Background(), configPath, lockPath, 1); code != 0 {
 		t.Fatalf("second Check() = %d, want 0", code)
 	}
 
@@ -62,7 +63,7 @@ datasets:
 	if err := os.Remove(filepath.Join(srcDir, "a.txt")); err != nil {
 		t.Fatal(err)
 	}
-	if code := core.Check(configPath, lockPath); code != 0 {
+	if code := core.Check(context.Background(), configPath, lockPath, 1); code != 0 {
 		t.Fatalf("Check() after deletion = %d, want 0", code)
 	}
 	if _, err := os.Stat(filepath.Join(targetDir, "a.txt")); !os.IsNotExist(err) {
@@ -91,7 +92,7 @@ datasets:
 	mustWriteFile(t, configPath, configContent)
 	lockPath := filepath.Join(tmpDir, ".data.lock.yaml")
 
-	if code := core.Fetch(configPath, lockPath, nil); code != 0 {
+	if code := core.Fetch(context.Background(), configPath, lockPath, nil, 1); code != 0 {
 		t.Fatalf("Fetch() = %d, want 0", code)
 	}
 	got, err := os.ReadFile(filepath.Join(targetDir, "only.txt"))

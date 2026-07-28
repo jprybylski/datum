@@ -71,7 +71,7 @@ datasets:
 		mustWriteFile(t, configPath, []byte(configContent))
 		lockPath := filepath.Join(tmpDir, "lock.yaml")
 
-		code := Check(configPath, lockPath)
+		code := Check(context.Background(), configPath, lockPath, 1)
 		if code != 0 {
 			t.Errorf("Check() = %d, want 0", code)
 		}
@@ -82,7 +82,7 @@ datasets:
 		lockPath := filepath.Join(tmpDir, "lock2.yaml")
 		mustWriteFile(t, configPath, []byte("invalid: yaml: syntax:"))
 
-		code := Check(configPath, lockPath)
+		code := Check(context.Background(), configPath, lockPath, 1)
 		if code != 2 {
 			t.Errorf("Check() = %d, want 2", code)
 		}
@@ -113,7 +113,7 @@ items:
 		mustWriteFile(t, lockPath, []byte(lockContent))
 
 		// Run Check - should fail since fingerprint changed
-		code := Check(configPath, lockPath)
+		code := Check(context.Background(), configPath, lockPath, 1)
 		if code != 1 {
 			t.Errorf("Check() = %d, want 1 (should fail on changed fingerprint)", code)
 		}
@@ -163,7 +163,7 @@ items:
 		mustWriteFile(t, lockPath, []byte(lockContent))
 
 		// Run Check - should succeed (log doesn't fail)
-		code := Check(configPath, lockPath)
+		code := Check(context.Background(), configPath, lockPath, 1)
 		if code != 0 {
 			t.Errorf("Check() = %d, want 0 (log policy should not fail)", code)
 		}
@@ -204,7 +204,7 @@ datasets:
 		mustWriteFile(t, configPath, []byte(configContent))
 
 		// Run Check - should fail since fetch fails
-		code := Check(configPath, lockPath)
+		code := Check(context.Background(), configPath, lockPath, 1)
 		if code != 1 {
 			t.Errorf("Check() = %d, want 1 (should fail on fetch error)", code)
 		}
@@ -248,7 +248,7 @@ datasets:
 		mustWriteFile(t, configPath, []byte(configContent))
 		lockPath := filepath.Join(tmpDir, "fetchlock.yaml")
 
-		code := Fetch(configPath, lockPath, nil)
+		code := Fetch(context.Background(), configPath, lockPath, nil, 1)
 		if code != 0 {
 			t.Errorf("Fetch() = %d, want 0", code)
 		}
@@ -263,7 +263,7 @@ datasets:
 		lockPath := filepath.Join(tmpDir, "flock.yaml")
 		mustWriteFile(t, configPath, []byte("bad: yaml: syntax:"))
 
-		code := Fetch(configPath, lockPath, nil)
+		code := Fetch(context.Background(), configPath, lockPath, nil, 1)
 		if code != 2 {
 			t.Errorf("Fetch() = %d, want 2", code)
 		}
@@ -284,7 +284,7 @@ datasets:
 		mustWriteFile(t, configPath, []byte(configContent))
 
 		// Run Fetch - should fail since fetch fails
-		code := Fetch(configPath, lockPath, nil)
+		code := Fetch(context.Background(), configPath, lockPath, nil, 1)
 		if code != 1 {
 			t.Errorf("Fetch() = %d, want 1 (should fail on fetch error)", code)
 		}

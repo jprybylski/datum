@@ -388,6 +388,22 @@ See the [Multi-Source Example](examples/multi-source/) for more details.
 
 ## Commands
 
+Both commands accept two flags in addition to `--config`/`--lock`:
+
+- `--timeout` (default `5m`) - overall deadline for the whole run, covering every dataset's
+  handler operations (HTTP requests, git fetches, shell commands). A hung source can't block the
+  process forever; when it fires, in-flight datasets fail with a `context deadline exceeded`
+  error rather than the process hanging. Accepts Go duration syntax (`30s`, `5m`, `1h`); `0`
+  disables it.
+- `--concurrency` (default `1`, sequential) - maximum number of datasets processed in parallel.
+  Output is always printed back in the order datasets appear in `.data.yaml`, regardless of which
+  one finishes first, so logs read the same way at any concurrency level. Values below `1` are
+  treated as `1`.
+
+```bash
+datum --config .data.yaml --timeout 2m --concurrency 4 check
+```
+
 ### `datum check`
 
 Verifies all configured datasets against their recorded fingerprints.

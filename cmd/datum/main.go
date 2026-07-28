@@ -8,10 +8,12 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/jprybylski/datum/internal/core"
 	// Side-effect imports: These imports don't use any exported symbols,
@@ -34,8 +36,8 @@ func usage() {
 	fmt.Print(`datum - verify/fetch external data by config+lock
 
 Usage:
-  datum [--config .data.yaml] [--lock .data.lock.yaml] check
-  datum [--config .data.yaml] [--lock .data.lock.yaml] fetch [ID ...]
+  datum [--config .data.yaml] [--lock .data.lock.yaml] [--timeout 5m] [--concurrency 1] check
+  datum [--config .data.yaml] [--lock .data.lock.yaml] [--timeout 5m] [--concurrency 1] fetch [ID ...]
 `)
 }
 
@@ -55,8 +57,12 @@ func run(args []string) int {
 	fs.SetOutput(io.Discard)
 
 	var cfgPath, lockPath string
+	var timeout time.Duration
+	var concurrency int
 	fs.StringVar(&cfgPath, "config", ".data.yaml", "path to config YAML")
 	fs.StringVar(&lockPath, "lock", ".data.lock.yaml", "path to lock YAML")
+	fs.DurationVar(&timeout, "timeout", 5*time.Minute, "overall timeout for the whole check/fetch run (e.g. 30s, 5m, 1h); 0 disables it")
+	fs.IntVar(&concurrency, "concurrency", 1, "number of datasets to process in parallel (default: sequential)")
 
 	if err := fs.Parse(args); err != nil {
 		usage()
@@ -69,6 +75,17 @@ func run(args []string) int {
 		return 2
 	}
 
+	if concurrency < 1 {
+		concurrency = 1
+	}
+
+	ctx := context.Background()
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
 	// Get the subcommand (first non-flag argument)
 	cmd := fs.Arg(0)
 
@@ -76,13 +93,13 @@ func run(args []string) int {
 	switch cmd {
 	case "check":
 		// Verify all datasets against the lockfile
-		return core.Check(cfgPath, lockPath)
+		return core.Check(ctx, cfgPath, lockPath, concurrency)
 
 	case "fetch":
 		// Fetch specific datasets (or all if none specified)
 		// fs.Args()[1:] skips the subcommand itself
 		ids := fs.Args()[1:]
-		return core.Fetch(cfgPath, lockPath, ids)
+		return core.Fetch(ctx, cfgPath, lockPath, ids, concurrency)
 
 	default:
 		// Unknown subcommand - show usage and exit
