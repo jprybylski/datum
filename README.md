@@ -248,7 +248,7 @@ This checks if the remote data has changed. Based on your policy:
 
 ### Prerequisites
 
-- Go 1.23 or later
+- Go 1.25 or later
 - Git (if you want git repository support)
 
 ### Build from Source
@@ -687,13 +687,20 @@ datum/
 │       ├── shell_unix.go    # Unix/Linux shell execution
 │       └── shell_windows.go # Windows shell execution
 │
-├── examples/              # Example configurations
+├── examples/              # Example configurations (one per handler/feature, see Examples below)
 │   ├── basic/
-│   └── git-one-file/
+│   ├── git-one-file/
+│   ├── directory-sync/
+│   └── ...
 │
-├── scripts/               # Build scripts
-│   ├── make.sh           # Linux/Mac build script
-│   └── make.ps1          # Windows build script
+├── test/
+│   └── integration/       # Docker-based integration tests (build tag: integration)
+│       └── gitserver/     # Minimal git-over-SSH server used by those tests
+│
+├── scripts/               # Build and test scripts
+│   ├── make.sh                # Linux/Mac build script
+│   ├── make.ps1               # Windows build script
+│   └── test-integration.sh    # Runs the Docker-based integration suite
 │
 ├── go.mod                # Go module definition
 ├── go.sum                # Dependency checksums
@@ -1022,6 +1029,35 @@ This example demonstrates using different policies for different types of data: 
 **Try it:**
 ```bash
 cd examples/multi-policy
+datum --config .data.yaml fetch
+datum --config .data.yaml check
+```
+
+### Example 7: File Handler - Directory Sync
+
+From [`examples/directory-sync/.data.yaml`](examples/directory-sync/.data.yaml):
+
+```yaml
+version: 1
+defaults:
+  policy: update
+  algo: sha256
+
+datasets:
+  - id: directory_dataset
+    desc: "Entire source-data/ directory tracked and synced as one dataset"
+    source:
+      type: file
+      path: source-data
+    target: synced-data
+    policy: update
+```
+
+Pointing the file handler's `path` at a directory instead of a single file tracks the whole tree as one dataset: every file gets recreated under `target`, and files removed from `source-data/` are removed from `synced-data/` on the next fetch. See [Directory sources](#file-handler-built-in) for details.
+
+**Try it:**
+```bash
+cd examples/directory-sync
 datum --config .data.yaml fetch
 datum --config .data.yaml check
 ```
