@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=../../data-schema.json
+#
+# Sample config for manually exercising the real `datum` CLI against the sandbox git server
+# started by scripts/sandbox.sh. Not used by the automated Docker integration test suite (those
+# tests call the git handler package directly) - this is for trying it by hand. See
+# scripts/sandbox.sh's "status" output for the exact command.
+
+version: 1
+defaults:
+  policy: update
+  algo: sha256
+
+datasets:
+  - id: sandbox_hello
+    desc: "hello.txt from the sandbox git server (branch: main)"
+    source:
+      type: git
+      url: ssh://gituser@localhost:2222/srv/git/repo.git
+      ref: main
+      path: hello.txt
+    target: test/integration/sandbox-output/hello.txt
+
+  - id: sandbox_hello_tag
+    desc: "hello.txt pinned to the v1.0.0 tag"
+    source:
+      type: git
+      url: ssh://gituser@localhost:2222/srv/git/repo.git
+      ref: v1.0.0
+      path: hello.txt
+    target: test/integration/sandbox-output/hello-v1.0.0.txt

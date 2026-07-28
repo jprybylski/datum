@@ -123,13 +123,19 @@ func TestWriteLock(t *testing.T) {
 		}
 	})
 
-	t.Run("write to non-existent directory fails", func(t *testing.T) {
-		lockPath := filepath.Join(tmpDir, "nonexistent", "dir", "test.lock.yaml")
+	t.Run("write creates missing parent directories", func(t *testing.T) {
+		// Regression test: writeLock used to assume the parent directory already existed,
+		// unlike every handler's own file-write path (which os.MkdirAll's the target's parent
+		// first) - a fresh --lock path pointing into a not-yet-created directory (a very
+		// plausible first-run scenario) failed with a confusing "no such file or directory".
+		lockPath := filepath.Join(tmpDir, "nested", "dir", "test.lock.yaml")
 		lk := &Lock{Version: 1}
 
-		err := writeLock(lockPath, lk)
-		if err == nil {
-			t.Error("writeLock() expected error for non-existent directory, got nil")
+		if err := writeLock(lockPath, lk); err != nil {
+			t.Fatalf("writeLock() error = %v, want nil (should create missing parent dirs)", err)
+		}
+		if _, err := os.Stat(lockPath); err != nil {
+			t.Errorf("lock file was not created: %v", err)
 		}
 	})
 
