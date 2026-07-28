@@ -56,7 +56,7 @@ datasets:
       type: mock
     target: /tmp/test.txt
 `
-		os.WriteFile(configPath, []byte(configContent), 0o644)
+		mustWriteFile(t, configPath, []byte(configContent))
 
 		cfg, err := readConfig(configPath)
 		if err != nil {
@@ -79,7 +79,7 @@ datasets:
       - type: secondary
     target: /tmp/test.txt
 `
-		os.WriteFile(configPath, []byte(configContent), 0o644)
+		mustWriteFile(t, configPath, []byte(configContent))
 
 		cfg, err := readConfig(configPath)
 		if err != nil {
@@ -109,7 +109,7 @@ datasets:
       - type: primary
     target: /tmp/test.txt
 `
-		os.WriteFile(configPath, []byte(configContent), 0o644)
+		mustWriteFile(t, configPath, []byte(configContent))
 
 		_, err := readConfig(configPath)
 		if err == nil {
@@ -124,7 +124,7 @@ datasets:
   - id: test1
     target: /tmp/test.txt
 `
-		os.WriteFile(configPath, []byte(configContent), 0o644)
+		mustWriteFile(t, configPath, []byte(configContent))
 
 		_, err := readConfig(configPath)
 		if err == nil {
@@ -150,10 +150,10 @@ datasets:
     target: ` + targetFile + `
     policy: update
 `
-		os.WriteFile(configPath, []byte(configContent), 0o644)
+		mustWriteFile(t, configPath, []byte(configContent))
 
 		// Run Check - should succeed with fallback to secondary
-		code := Check(configPath, lockPath)
+		code := Check(context.Background(), configPath, lockPath, 1)
 		if code != 0 {
 			t.Errorf("Check() = %d, want 0 (should succeed with fallback)", code)
 		}
@@ -197,10 +197,10 @@ datasets:
     target: ` + targetFile + `
     policy: update
 `
-		os.WriteFile(configPath, []byte(configContent), 0o644)
+		mustWriteFile(t, configPath, []byte(configContent))
 
 		// Run Check - should fail since all sources fail
-		code := Check(configPath, lockPath)
+		code := Check(context.Background(), configPath, lockPath, 1)
 		if code != 1 {
 			t.Errorf("Check() = %d, want 1 (should fail when all sources fail)", code)
 		}
@@ -225,10 +225,10 @@ datasets:
     target: ` + targetFile + `
     policy: update
 `
-		os.WriteFile(configPath, []byte(configContent), 0o644)
+		mustWriteFile(t, configPath, []byte(configContent))
 
 		// Run Check - should succeed with first source
-		code := Check(configPath, lockPath)
+		code := Check(context.Background(), configPath, lockPath, 1)
 		if code != 0 {
 			t.Errorf("Check() = %d, want 0", code)
 		}
@@ -275,10 +275,10 @@ datasets:
       - type: secondary
     target: ` + targetFile + `
 `
-		os.WriteFile(configPath, []byte(configContent), 0o644)
+		mustWriteFile(t, configPath, []byte(configContent))
 
 		// Run Fetch - should succeed with fallback to secondary
-		code := Fetch(configPath, lockPath, nil)
+		code := Fetch(context.Background(), configPath, lockPath, nil, 1)
 		if code != 0 {
 			t.Errorf("Fetch() = %d, want 0 (should succeed with fallback)", code)
 		}
@@ -321,10 +321,10 @@ datasets:
       - type: failprimary
     target: ` + targetFile + `
 `
-		os.WriteFile(configPath, []byte(configContent), 0o644)
+		mustWriteFile(t, configPath, []byte(configContent))
 
 		// Run Fetch - should fail since all sources fail
-		code := Fetch(configPath, lockPath, nil)
+		code := Fetch(context.Background(), configPath, lockPath, nil, 1)
 		if code != 1 {
 			t.Errorf("Fetch() = %d, want 1 (should fail when all sources fail)", code)
 		}
@@ -369,7 +369,7 @@ datasets:
     target: ` + targetFile + `
     policy: fail
 `
-		os.WriteFile(configPath, []byte(configContent), 0o644)
+		mustWriteFile(t, configPath, []byte(configContent))
 
 		// Create a lockfile with an old fingerprint
 		lockContent := `version: 1
@@ -378,10 +378,10 @@ items:
     local_sha256: old_hash
     remote_fingerprint: old_fingerprint
 `
-		os.WriteFile(lockPath, []byte(lockContent), 0o644)
+		mustWriteFile(t, lockPath, []byte(lockContent))
 
 		// Run Check - should fail since fingerprint changed (secondary-fp vs old_fingerprint)
-		code := Check(configPath, lockPath)
+		code := Check(context.Background(), configPath, lockPath, 1)
 		if code != 1 {
 			t.Errorf("Check() = %d, want 1 (should fail on changed fingerprint)", code)
 		}
@@ -417,7 +417,7 @@ datasets:
     target: ` + targetFile + `
     policy: log
 `
-		os.WriteFile(configPath, []byte(configContent), 0o644)
+		mustWriteFile(t, configPath, []byte(configContent))
 
 		// Create a lockfile with an old fingerprint
 		lockContent := `version: 1
@@ -426,10 +426,10 @@ items:
     local_sha256: old_hash
     remote_fingerprint: old_fingerprint
 `
-		os.WriteFile(lockPath, []byte(lockContent), 0o644)
+		mustWriteFile(t, lockPath, []byte(lockContent))
 
 		// Run Check - should succeed (log doesn't fail) but reports stale
-		code := Check(configPath, lockPath)
+		code := Check(context.Background(), configPath, lockPath, 1)
 		if code != 0 {
 			t.Errorf("Check() = %d, want 0 (log policy should not fail)", code)
 		}

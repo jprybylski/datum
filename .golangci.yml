@@ -7,13 +7,13 @@ run:
 
 linters:
   enable:
+    - errcheck
     - staticcheck
     - govet
     - unused
     - ineffassign
     - misspell
   disable:
-    - errcheck  # Disabled - many false positives in test code and defer statements
     - revive    # Disabled - style preferences vary
 
   settings:

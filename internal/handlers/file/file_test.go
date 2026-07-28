@@ -136,3 +136,171 @@ func TestHandler_Fetch(t *testing.T) {
 		}
 	})
 }
+
+func mustWriteFile(t *testing.T, path string, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir for %s: %v", path, err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+func TestHandler_Fingerprint_Directory(t *testing.T) {
+	ctx := context.Background()
+	h := New()
+
+	t.Run("directory fingerprint has dirsha256 prefix and is stable", func(t *testing.T) {
+		srcDir := t.TempDir()
+		mustWriteFile(t, filepath.Join(srcDir, "a.txt"), "aaa")
+		mustWriteFile(t, filepath.Join(srcDir, "sub", "b.txt"), "bbb")
+
+		src := registry.Source{Path: srcDir}
+		fp1, err := h.Fingerprint(ctx, src)
+		if err != nil {
+			t.Fatalf("Fingerprint() error = %v", err)
+		}
+		if len(fp1) < 10 || fp1[:10] != "dirsha256:" {
+			t.Errorf("Fingerprint() = %q, want dirsha256: prefix", fp1)
+		}
+
+		fp2, err := h.Fingerprint(ctx, src)
+		if err != nil {
+			t.Fatalf("Fingerprint() second call error = %v", err)
+		}
+		if fp1 != fp2 {
+			t.Errorf("Fingerprint() not stable across calls: %q != %q", fp1, fp2)
+		}
+	})
+
+	t.Run("directory fingerprint changes when contents change", func(t *testing.T) {
+		srcDir := t.TempDir()
+		mustWriteFile(t, filepath.Join(srcDir, "a.txt"), "aaa")
+		src := registry.Source{Path: srcDir}
+
+		fp1, err := h.Fingerprint(ctx, src)
+		if err != nil {
+			t.Fatalf("Fingerprint() error = %v", err)
+		}
+
+		mustWriteFile(t, filepath.Join(srcDir, "b.txt"), "bbb")
+		fp2, err := h.Fingerprint(ctx, src)
+		if err != nil {
+			t.Fatalf("Fingerprint() error = %v", err)
+		}
+		if fp1 == fp2 {
+			t.Error("Fingerprint() did not change after adding a file to the directory")
+		}
+	})
+}
+
+func TestHandler_Fetch_Directory(t *testing.T) {
+	ctx := context.Background()
+	h := New()
+
+	t.Run("initial sync recreates the tree under dest", func(t *testing.T) {
+		srcDir := t.TempDir()
+		mustWriteFile(t, filepath.Join(srcDir, "a.txt"), "aaa")
+		mustWriteFile(t, filepath.Join(srcDir, "sub", "b.txt"), "bbb")
+
+		destDir := filepath.Join(t.TempDir(), "out")
+		src := registry.Source{Path: srcDir}
+		if err := h.Fetch(ctx, src, destDir); err != nil {
+			t.Fatalf("Fetch() error = %v", err)
+		}
+
+		got, err := os.ReadFile(filepath.Join(destDir, "a.txt"))
+		if err != nil || string(got) != "aaa" {
+			t.Errorf("dest a.txt = %q, %v; want %q, nil", got, err, "aaa")
+		}
+		got, err = os.ReadFile(filepath.Join(destDir, "sub", "b.txt"))
+		if err != nil || string(got) != "bbb" {
+			t.Errorf("dest sub/b.txt = %q, %v; want %q, nil", got, err, "bbb")
+		}
+	})
+
+	t.Run("re-fetch after content change updates the file", func(t *testing.T) {
+		srcDir := t.TempDir()
+		mustWriteFile(t, filepath.Join(srcDir, "a.txt"), "original")
+		destDir := filepath.Join(t.TempDir(), "out")
+		src := registry.Source{Path: srcDir}
+
+		if err := h.Fetch(ctx, src, destDir); err != nil {
+			t.Fatalf("Fetch() error = %v", err)
+		}
+		mustWriteFile(t, filepath.Join(srcDir, "a.txt"), "updated")
+		if err := h.Fetch(ctx, src, destDir); err != nil {
+			t.Fatalf("Fetch() second call error = %v", err)
+		}
+
+		got, err := os.ReadFile(filepath.Join(destDir, "a.txt"))
+		if err != nil || string(got) != "updated" {
+			t.Errorf("dest a.txt = %q, %v; want %q, nil", got, err, "updated")
+		}
+	})
+
+	t.Run("file removed from source is removed from dest", func(t *testing.T) {
+		srcDir := t.TempDir()
+		mustWriteFile(t, filepath.Join(srcDir, "keep.txt"), "keep")
+		mustWriteFile(t, filepath.Join(srcDir, "removeme.txt"), "gone soon")
+		destDir := filepath.Join(t.TempDir(), "out")
+		src := registry.Source{Path: srcDir}
+
+		if err := h.Fetch(ctx, src, destDir); err != nil {
+			t.Fatalf("Fetch() error = %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(destDir, "removeme.txt")); err != nil {
+			t.Fatalf("removeme.txt should exist after first fetch: %v", err)
+		}
+
+		if err := os.Remove(filepath.Join(srcDir, "removeme.txt")); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.Fetch(ctx, src, destDir); err != nil {
+			t.Fatalf("Fetch() second call error = %v", err)
+		}
+
+		if _, err := os.Stat(filepath.Join(destDir, "removeme.txt")); !os.IsNotExist(err) {
+			t.Errorf("removeme.txt should have been deleted from dest, stat err = %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(destDir, "keep.txt")); err != nil {
+			t.Errorf("keep.txt should still exist: %v", err)
+		}
+	})
+
+	t.Run("unrelated pre-existing file in dest is left alone", func(t *testing.T) {
+		srcDir := t.TempDir()
+		mustWriteFile(t, filepath.Join(srcDir, "managed.txt"), "managed")
+		destDir := t.TempDir()
+		// A file datum never wrote, living in the same target directory.
+		mustWriteFile(t, filepath.Join(destDir, "unrelated.txt"), "not from datum")
+
+		src := registry.Source{Path: srcDir}
+		if err := h.Fetch(ctx, src, destDir); err != nil {
+			t.Fatalf("Fetch() error = %v", err)
+		}
+
+		got, err := os.ReadFile(filepath.Join(destDir, "unrelated.txt"))
+		if err != nil || string(got) != "not from datum" {
+			t.Errorf("unrelated.txt was touched: content = %q, err = %v", got, err)
+		}
+	})
+
+	t.Run("manifest sidecar is a sibling of dest, not inside it", func(t *testing.T) {
+		srcDir := t.TempDir()
+		mustWriteFile(t, filepath.Join(srcDir, "a.txt"), "aaa")
+		destDir := filepath.Join(t.TempDir(), "out")
+		src := registry.Source{Path: srcDir}
+
+		if err := h.Fetch(ctx, src, destDir); err != nil {
+			t.Fatalf("Fetch() error = %v", err)
+		}
+		if _, err := os.Stat(destDir + manifestSuffix); err != nil {
+			t.Errorf("expected manifest sidecar at %s: %v", destDir+manifestSuffix, err)
+		}
+		if _, err := os.Stat(filepath.Join(destDir, manifestSuffix)); !os.IsNotExist(err) {
+			t.Error("manifest sidecar should not be written inside dest")
+		}
+	})
+}

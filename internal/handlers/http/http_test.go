@@ -74,7 +74,9 @@ func TestHandler_Fingerprint(t *testing.T) {
 				return
 			}
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(content))
+			if _, err := w.Write([]byte(content)); err != nil {
+				t.Errorf("test server write error: %v", err)
+			}
 		}))
 		defer server.Close()
 
@@ -125,7 +127,9 @@ func TestHandler_Fetch(t *testing.T) {
 		content := "downloaded content"
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(content))
+			if _, err := w.Write([]byte(content)); err != nil {
+				t.Errorf("test server write error: %v", err)
+			}
 		}))
 		defer server.Close()
 
@@ -177,7 +181,9 @@ func TestHandler_Fetch(t *testing.T) {
 		content := "test"
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(content))
+			if _, err := w.Write([]byte(content)); err != nil {
+				t.Errorf("test server write error: %v", err)
+			}
 		}))
 		defer server.Close()
 

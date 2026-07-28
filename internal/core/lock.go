@@ -2,6 +2,7 @@ package core
 
 import (
 	"os"
+	"path/filepath"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -94,6 +95,14 @@ func writeLock(path string, l *Lock) error {
 	b, err := yaml.Marshal(l)
 	if err != nil {
 		return err
+	}
+
+	// Create the parent directory if needed, same as every handler does for its own target
+	// file - otherwise a fresh --lock path in a not-yet-created directory fails confusingly.
+	if dir := filepath.Dir(path); dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
 	}
 
 	// Write to a temporary file first (atomic write pattern)

@@ -1,0 +1,13 @@
+Port 22
+HostKey /etc/ssh/ssh_host_ed25519_key
+HostKey /etc/ssh/ssh_host_rsa_key
+
+PubkeyAuthentication yes
+PasswordAuthentication no
+PermitEmptyPasswords no
+ChallengeResponseAuthentication no
+PermitRootLogin no
+AllowUsers gituser
+StrictModes yes
+
+Subsystem sftp internal-sftp

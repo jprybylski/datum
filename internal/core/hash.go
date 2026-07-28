@@ -4,7 +4,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
+	"io/fs"
 	"os"
+	"path/filepath"
+	"sort"
 )
 
 // HashFile computes the SHA256 hash of a file's contents.
@@ -45,6 +48,70 @@ func HashFile(path string) (string, error) {
 	// Sum(nil) returns the hash as a byte slice
 	// EncodeToString converts it to a readable hexadecimal string
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// HashPath computes a content hash for whatever is at path, automatically detecting whether
+// it's a single file (delegates to HashFile) or a directory (delegates to HashDir). This lets
+// callers that don't know in advance whether a dataset target is a file or a directory - like
+// the engine's local-hash comparison - hash either one the same way.
+func HashPath(path string) (string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		return HashDir(path)
+	}
+	return HashFile(path)
+}
+
+// DirManifest walks dir and returns the sorted, slash-separated paths (relative to dir) of every
+// regular file within it. Sorting makes the result independent of filesystem iteration order,
+// which matters both for HashDir's determinism and for diffing manifests between fetches.
+func DirManifest(dir string) ([]string, error) {
+	var rels []string
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(dir, p)
+		if err != nil {
+			return err
+		}
+		rels = append(rels, filepath.ToSlash(rel))
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(rels)
+	return rels, nil
+}
+
+// HashDir computes a deterministic aggregate hash of a directory tree: every regular file's
+// path (relative to dir) and SHA256 content hash are combined, in sorted-path order, into one
+// final SHA256. Adding, removing, renaming, or modifying any file under dir changes the result.
+func HashDir(dir string) (string, error) {
+	rels, err := DirManifest(dir)
+	if err != nil {
+		return "", err
+	}
+
+	agg := sha256.New()
+	for _, rel := range rels {
+		h, err := HashFile(filepath.Join(dir, rel))
+		if err != nil {
+			return "", err
+		}
+		agg.Write([]byte(rel))
+		agg.Write([]byte{0})
+		agg.Write([]byte(h))
+		agg.Write([]byte{'\n'})
+	}
+	return hex.EncodeToString(agg.Sum(nil)), nil
 }
 
 // fileExists checks whether a file or directory exists at the given path.

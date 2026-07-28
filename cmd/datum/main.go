@@ -8,9 +8,12 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"time"
 
 	"github.com/jprybylski/datum/internal/core"
 	// Side-effect imports: These imports don't use any exported symbols,
@@ -24,6 +27,10 @@ import (
 	_ "github.com/jprybylski/datum/internal/handlers/http"
 )
 
+// version is set at build time via -ldflags "-X main.version=vX.Y.Z" (see .goreleaser.yml).
+// Locally built binaries (plain "go build") keep the "dev" default.
+var version = "dev"
+
 // usage prints help text to stdout.
 //
 // This is called when the user provides no arguments or an invalid command.
@@ -33,61 +40,87 @@ func usage() {
 	fmt.Print(`datum - verify/fetch external data by config+lock
 
 Usage:
-  datum [--config .data.yaml] [--lock .data.lock.yaml] check
-  datum [--config .data.yaml] [--lock .data.lock.yaml] fetch [ID ...]
+  datum [--config .data.yaml] [--lock .data.lock.yaml] [--timeout 5m] [--concurrency 1] check
+  datum [--config .data.yaml] [--lock .data.lock.yaml] [--timeout 5m] [--concurrency 1] fetch [ID ...]
+  datum --version
 `)
 }
 
-// main is the program entry point.
-//
-// Execution flow:
-//  1. Parse command-line flags (--config, --lock)
-//  2. Get the subcommand (check or fetch)
-//  3. Dispatch to the appropriate core function
-//  4. Exit with the returned status code
+// run parses args and dispatches to the appropriate core function, returning the process exit
+// code. It's factored out of main() so it can be exercised directly in tests without needing to
+// spawn a subprocess or deal with flag.Parse's default os.Exit-on-error behavior.
 //
 // Exit codes:
 //
 //	0 = Success
 //	1 = Verification failed or fetch error
 //	2 = Configuration error or invalid usage
-func main() {
-	// Define command-line flags
-	// StringVar binds a flag to a variable. Format: (varPtr, flagName, defaultValue, description)
-	var cfgPath, lockPath string
-	flag.StringVar(&cfgPath, "config", ".data.yaml", "path to config YAML")
-	flag.StringVar(&lockPath, "lock", ".data.lock.yaml", "path to lock YAML")
+func run(args []string) int {
+	// Use a dedicated FlagSet (rather than the global flag.CommandLine) so parse errors return
+	// to the caller instead of calling os.Exit directly - that's what makes this testable.
+	fs := flag.NewFlagSet("datum", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
 
-	// Parse flags from os.Args[1:]
-	// After this call, flag.Args() contains non-flag arguments (the subcommand and its args)
-	flag.Parse()
+	var cfgPath, lockPath string
+	var timeout time.Duration
+	var concurrency int
+	var showVersion bool
+	fs.StringVar(&cfgPath, "config", ".data.yaml", "path to config YAML")
+	fs.StringVar(&lockPath, "lock", ".data.lock.yaml", "path to lock YAML")
+	fs.DurationVar(&timeout, "timeout", 5*time.Minute, "overall timeout for the whole check/fetch run (e.g. 30s, 5m, 1h); 0 disables it")
+	fs.IntVar(&concurrency, "concurrency", 1, "number of datasets to process in parallel (default: sequential)")
+	fs.BoolVar(&showVersion, "version", false, "print the datum version and exit")
+
+	if err := fs.Parse(args); err != nil {
+		usage()
+		return 2
+	}
+
+	if showVersion {
+		fmt.Println("datum", version)
+		return 0
+	}
 
 	// Require at least one non-flag argument (the subcommand)
-	if flag.NArg() < 1 {
+	if fs.NArg() < 1 {
 		usage()
-		os.Exit(2) // Exit code 2 = invalid usage
+		return 2
+	}
+
+	if concurrency < 1 {
+		concurrency = 1
+	}
+
+	ctx := context.Background()
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
 	}
 
 	// Get the subcommand (first non-flag argument)
-	cmd := flag.Arg(0)
+	cmd := fs.Arg(0)
 
 	// Dispatch to the appropriate handler based on subcommand
 	switch cmd {
 	case "check":
 		// Verify all datasets against the lockfile
-		code := core.Check(cfgPath, lockPath)
-		os.Exit(code)
+		return core.Check(ctx, cfgPath, lockPath, concurrency)
 
 	case "fetch":
 		// Fetch specific datasets (or all if none specified)
-		// flag.Args() returns all non-flag arguments, [1:] skips the subcommand itself
-		ids := flag.Args()[1:]
-		code := core.Fetch(cfgPath, lockPath, ids)
-		os.Exit(code)
+		// fs.Args()[1:] skips the subcommand itself
+		ids := fs.Args()[1:]
+		return core.Fetch(ctx, cfgPath, lockPath, ids, concurrency)
 
 	default:
 		// Unknown subcommand - show usage and exit
 		usage()
-		os.Exit(2)
+		return 2
 	}
+}
+
+// main is the program entry point.
+func main() {
+	os.Exit(run(os.Args[1:]))
 }

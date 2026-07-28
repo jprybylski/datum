@@ -128,17 +128,17 @@
     },
     "fileSource": {
       "type": "object",
-      "description": "Local or network file source",
+      "description": "Local or network file (or directory) source",
       "required": ["type", "path"],
       "properties": {
         "type": {
           "type": "string",
           "enum": ["file"],
-          "description": "File handler for copying local files"
+          "description": "File handler for copying local files or directories"
         },
         "path": {
           "type": "string",
-          "description": "Absolute or relative path to the source file"
+          "description": "Absolute or relative path to the source file or directory. If this is a directory (auto-detected at run time), the entire tree is recreated under 'target', and files deleted upstream are removed from 'target' on the next fetch."
         }
       },
       "additionalProperties": false
