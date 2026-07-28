@@ -31,31 +31,42 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
 
-      - name: Check if this version was already released
+      # Two separate checks, not one: a previous run can fail after creating the tag but before
+      # goreleaser publishes (that's exactly what happened here - see the "dirty git state" fix
+      # below). Re-running must skip tag creation (it already exists) but still publish, not
+      # treat "tag exists" as "fully released" and skip everything.
+      - name: Check what's already done
         id: check
         run: |
           if git rev-parse "${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "tag_exists=true" >> "$GITHUB_OUTPUT"
           else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "tag_exists=false" >> "$GITHUB_OUTPUT"
           fi
+          if gh release view "${{ steps.version.outputs.tag }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "release_exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "release_exists=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract release notes from CHANGELOG.md
-        if: steps.check.outputs.exists == 'false'
+        if: steps.check.outputs.release_exists == 'false'
         run: |
           awk -v ver="${{ steps.version.outputs.version }}" '
             $0 ~ ("^## \\[" ver "\\]") {flag=1; next}
             /^## \[/ {flag=0}
             flag {print}
-          ' CHANGELOG.md > release_notes.md
-          if [ ! -s release_notes.md ]; then
+          ' CHANGELOG.md > "${{ runner.temp }}/release_notes.md"
+          if [ ! -s "${{ runner.temp }}/release_notes.md" ]; then
             echo "::error::CHANGELOG.md has no '## [${{ steps.version.outputs.version }}]' section - add one (release notes are pulled from it) before bumping VERSION."
             exit 1
           fi
-          cat release_notes.md
+          cat "${{ runner.temp }}/release_notes.md"
 
       - name: Create and push tag
-        if: steps.check.outputs.exists == 'false'
+        if: steps.check.outputs.release_exists == 'false' && steps.check.outputs.tag_exists == 'false'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -63,18 +74,21 @@ jobs:
           git push origin "${{ steps.version.outputs.tag }}"
 
       - name: Set up Go
-        if: steps.check.outputs.exists == 'false'
+        if: steps.check.outputs.release_exists == 'false'
         uses: actions/setup-go@v6
         with:
           go-version: 'stable'
           cache: false
 
       - name: Run GoReleaser
-        if: steps.check.outputs.exists == 'false'
+        if: steps.check.outputs.release_exists == 'false'
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: latest
-          args: release --clean --release-notes=release_notes.md
+          # release_notes.md is written to runner.temp (outside the repo) rather than the repo
+          # root: goreleaser refuses to run against a "dirty" git working tree, and an untracked
+          # file sitting in the repo - even one our own earlier step created - counts as dirty.
+          args: release --clean --release-notes=${{ runner.temp }}/release_notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
