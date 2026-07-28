@@ -12,7 +12,6 @@ permissions:
   contents: read
   pages: write
   id-token: write
-  administration: write # lets the deploy job set the repo's "Website" field to the Pages URL
 
 # Only one deploy at a time; let an in-flight one finish rather than cancelling it, since
 # cancelling a live Pages deploy mid-upload can leave the site in a half-updated state.
@@ -50,15 +49,9 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
 
-      - name: Set repo homepage to the deployed docs URL
-        run: |
-          current="$(gh api "repos/${{ github.repository }}" --jq .homepage)"
-          target="${{ steps.deployment.outputs.page_url }}"
-          if [ "$current" = "$target" ]; then
-            echo "Homepage already set to $target"
-          else
-            gh api "repos/${{ github.repository }}" -X PATCH -f homepage="$target"
-            echo "Set homepage: $current -> $target"
-          fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Repo settings (homepage/description/etc.) aren't in the default GITHUB_TOKEN's reach -
+      # "administration" isn't a permission this token can be granted at all, regardless of what
+      # the permissions: block above declares (confirmed: adding it made GitHub reject the whole
+      # workflow file as invalid, blocking every future run until reverted here). Updating the
+      # repo's Website field this way would need a PAT with repo-admin rights stored as a secret.
+      # Set by hand for now: https://jprybylski.github.io/datum/
