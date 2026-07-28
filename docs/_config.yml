@@ -1,0 +1,24 @@
+title: Datum
+description: A data pinning tool that tracks external data sources with cryptographic fingerprints.
+baseurl: "/datum"
+url: "https://jprybylski.github.io"
+
+remote_theme: just-the-docs/just-the-docs
+plugins:
+  - jekyll-remote-theme
+
+color_scheme: nil
+search_enabled: true
+heading_anchors: true
+
+aux_links:
+  "Datum on GitHub":
+    - "https://github.com/jprybylski/datum"
+
+aux_links_new_tab: true
+
+footer_content: "Datum is licensed under the <a href=\"https://github.com/jprybylski/datum/blob/main/LICENSE\">MIT License</a>."
+
+# GitHub Pages' Jekyll build only allows plugins from its supported-gems allowlist, which
+# includes jekyll-remote-theme - so this builds with no local Ruby toolchain, same as a plain
+# "point Pages at /docs" setup. See https://pages.github.com/versions/ for the allowlist.

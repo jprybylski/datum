@@ -19,3 +19,8 @@ CLAUDE.md
 # Ephemeral SSH keypair generated per-run by scripts/test-integration.sh - never committed
 test/integration/testdata/
 test/integration/gitserver/authorized_keys
+
+# Jekyll build output for docs/ (GitHub Pages builds this itself; not committed)
+docs/_site/
+docs/.jekyll-cache/
+docs/.jekyll-metadata
