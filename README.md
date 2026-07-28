@@ -774,6 +774,18 @@ go test -cover ./...
 go test ./internal/core
 ```
 
+**Integration tests:** a separate suite under `test/integration/` (gated behind the
+`integration` build tag, so it's excluded from `go test ./...`) exercises the git handler
+against a real git-over-SSH server in Docker, covering what fully in-process unit tests can't:
+the actual SSH transport and host-key verification behavior. Requires Docker:
+
+```bash
+bash scripts/test-integration.sh
+```
+
+This builds an ephemeral SSH keypair and git server container, runs the tests, and tears
+everything down again - nothing persists between runs.
+
 ### Code Quality
 
 ```bash

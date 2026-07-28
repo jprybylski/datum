@@ -129,3 +129,20 @@ jobs:
         cd examples/directory-sync
         ../../datum --config .data.yaml fetch
         ../../datum --config .data.yaml check
+
+  integration:
+    name: Integration (git over SSH)
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: 'stable'
+        cache: false
+
+    - name: Run Docker-based integration tests
+      run: bash scripts/test-integration.sh

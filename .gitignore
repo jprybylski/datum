@@ -15,3 +15,7 @@ coverage.out
 
 # AI assistant documentation
 CLAUDE.md
+
+# Ephemeral SSH keypair generated per-run by scripts/test-integration.sh - never committed
+test/integration/testdata/
+test/integration/gitserver/authorized_keys
