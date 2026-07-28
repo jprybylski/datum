@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `check`/`fetch` no longer panic when the lockfile exists but contains invalid YAML (as opposed
+  to not existing, which was already handled gracefully) - they now exit `2` with a clear "lock
+  error" message, same as a config parse error.
+
+### Changed
+- Test coverage raised from 85.5% to 96.7% overall, closing most of the error-handling branches
+  Codecov flagged as untested (all packages now above 90%).
+
 ## [1.2.0] - 2026-07-28
 
 ### Added
