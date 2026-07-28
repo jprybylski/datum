@@ -36,9 +36,16 @@ pipeline breaks if the upstream data changes unexpectedly.
 **Try it:**
 ```bash
 cd examples/basic
-datum --config .data.yaml fetch
-datum --config .data.yaml check
+datum fetch
+datum check
 ```
+
+<details markdown="1">
+<summary>▶ Watch a live run</summary>
+
+<img src="{{ '/assets/img/basic-fetch.gif' | relative_url }}" alt="Terminal recording of datum fetch followed by datum check against the basic HTTP example" width="600" loading="lazy">
+
+</details>
 
 ## Example 2: Git Handler - Tracking Dependency Licenses
 
@@ -68,9 +75,16 @@ ensuring you're always using the correct license text.
 **Try it:**
 ```bash
 cd examples/git-one-file
-datum --config .data.yaml fetch
-datum --config .data.yaml check
+datum fetch
+datum check
 ```
+
+<details markdown="1">
+<summary>▶ Watch a live run</summary>
+
+<img src="{{ '/assets/img/git-one-file.gif' | relative_url }}" alt="Terminal recording of datum fetch pulling a single LICENSE file out of a git repository, then datum check confirming it's up to date" width="600" loading="lazy">
+
+</details>
 
 ## Example 3: File Handler - Copying Local Files
 
@@ -98,8 +112,8 @@ when the source changes.
 **Try it:**
 ```bash
 cd examples/file-copy
-datum --config .data.yaml fetch
-datum --config .data.yaml check
+datum fetch
+datum check
 ```
 
 ## Example 4: Command Handler - System Information
@@ -129,8 +143,8 @@ information and uses a date-based fingerprint.
 **Try it:**
 ```bash
 cd examples/command-system
-datum --config .data.yaml fetch
-datum --config .data.yaml check
+datum fetch
+datum check
 ```
 
 ## Example 5: Multi-Source with Fallback
@@ -170,8 +184,8 @@ redundancy, and offline development workflows.
 **Try it:**
 ```bash
 cd examples/multi-source
-datum --config .data.yaml fetch
-datum --config .data.yaml check
+datum fetch
+datum check
 ```
 
 ## Example 6: Multiple Datasets with Different Policies
@@ -224,9 +238,22 @@ informational tracking.
 **Try it:**
 ```bash
 cd examples/multi-policy
-datum --config .data.yaml fetch
-datum --config .data.yaml check
+datum fetch
+datum check
 ```
+
+<details markdown="1">
+<summary>▶ Watch the same change hit `fail`, `update`, and `log`</summary>
+
+To isolate what each policy actually does, this recording uses a simplified stand-in config -
+one local file tracked three times, once per policy - rather than
+`examples/multi-policy` itself (whose three datasets track three unrelated sources). After the
+file changes, `datum check` reacts three different ways in one run: `fail` blocks with `[FAIL]`,
+`update` silently re-pins with `[UPD ]`, and `log` reports it with `[STALE]` and moves on.
+
+<img src="{{ '/assets/img/policy-reactions.gif' | relative_url }}" alt="Terminal recording showing datum check reacting differently to the same file change under fail, update, and log policies" width="600" loading="lazy">
+
+</details>
 
 ## Example 7: File Handler - Directory Sync
 
@@ -256,6 +283,13 @@ are removed from `synced-data/` on the next fetch. See
 **Try it:**
 ```bash
 cd examples/directory-sync
-datum --config .data.yaml fetch
-datum --config .data.yaml check
+datum fetch
+datum check
 ```
+
+<details markdown="1">
+<summary>▶ Watch a live run, including a deleted file dropping out of sync</summary>
+
+<img src="{{ '/assets/img/directory-sync.gif' | relative_url }}" alt="Terminal recording of datum fetch syncing a directory, then a file being deleted from the source and a second fetch removing it from the synced target too" width="600" loading="lazy">
+
+</details>

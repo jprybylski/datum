@@ -1,4 +1,5 @@
 a.out
+.DS_Store
 
 # Test coverage
 coverage.txt

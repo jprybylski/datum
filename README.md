@@ -80,7 +80,7 @@ datasets:
 ### 2. Fetch the data
 
 ```bash
-datum --config .data.yaml fetch
+datum fetch
 ```
 
 This downloads the file and creates a `.data.lock.yaml` with its fingerprint.
@@ -88,7 +88,7 @@ This downloads the file and creates a `.data.lock.yaml` with its fingerprint.
 ### 3. Verify data integrity
 
 ```bash
-datum --config .data.yaml check
+datum check
 ```
 
 This checks if the remote data has changed. Based on your policy:
@@ -168,16 +168,18 @@ a JSON Schema (`data-schema.json`) for IDE autocomplete/validation. See
 
 ## Commands
 
-Both commands accept `--config`, `--lock`, `--timeout` (default `5m`, bounds the whole run), and
-`--concurrency` (default `1`, sequential; processes datasets in parallel above that).
+Both commands accept `--config` (default `.data.yaml`), `--lock` (default `.data.lock.yaml`),
+`--timeout` (default `5m`, bounds the whole run), and `--concurrency` (default `1`, sequential;
+processes datasets in parallel above that). You only need to pass `--config`/`--lock` if your
+files aren't named the defaults.
 
 ```bash
 # Verify all datasets against their recorded fingerprints
-datum --config .data.yaml check
+datum check
 
 # Download data and update the lockfile (all datasets, or specific IDs)
-datum --config .data.yaml fetch
-datum --config .data.yaml fetch dataset1 dataset2
+datum fetch
+datum fetch dataset1 dataset2
 ```
 
 `check` exits `0` (up-to-date), `1` (changed/failed), or `2` (config error). Full flag reference
@@ -204,8 +206,8 @@ multi-source fallback, multi-policy, and directory sync. Full walkthroughs of ea
 
 ```bash
 cd examples/basic
-datum --config .data.yaml fetch
-datum --config .data.yaml check
+datum fetch
+datum check
 ```
 
 ## FAQ
