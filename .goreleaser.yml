@@ -39,11 +39,12 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
-# Release notes come from the matching CHANGELOG.md section instead (passed via
-# `goreleaser release --release-notes=...` in .github/workflows/release.yml), so skip
-# goreleaser's own commit-log-based changelog generation.
-changelog:
-  disable: true
+# Release notes come from the matching CHANGELOG.md section instead, passed via
+# `goreleaser release --release-notes=...` in .github/workflows/release.yml. Deliberately NOT
+# setting changelog.disable: true here to skip goreleaser's own commit-log changelog - its docs
+# warn that disable:true also makes it silently ignore --release-notes and render an empty body
+# (confirmed the hard way: v1.2.0's first release went out with an empty description because of
+# this). Leaving changelog at its default is fine: --release-notes takes priority over it anyway.
 
 release:
   github:
