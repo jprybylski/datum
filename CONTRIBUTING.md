@@ -262,6 +262,23 @@ All contributions go through code review. Reviewers will check:
 
 Be open to feedback and willing to iterate on your changes.
 
+## Releasing
+
+Releases are cut by bumping the version, not by tagging manually:
+
+1. Bump the version in the `VERSION` file (e.g. `1.2.0` → `1.3.0`).
+2. Add a matching `## [1.3.0] - YYYY-MM-DD` section to `CHANGELOG.md` (move the relevant entries
+   out of `## [Unreleased]` into it) - this becomes the GitHub Release's notes verbatim, so write
+   it for users, not just as a commit log.
+3. Open a PR with both changes and merge it to `main`.
+
+`.github/workflows/release.yml` picks it up from there: it tags the merge commit `vX.Y.Z`,
+cross-compiles binaries for Linux/macOS/Windows (amd64+arm64) via
+[goreleaser](https://goreleaser.com) (`.goreleaser.yml`), and publishes a GitHub Release with
+those binaries, `checksums.txt`, and the CHANGELOG section as the release body. It's idempotent -
+merging to `main` without bumping `VERSION` (or re-running the workflow for a version that's
+already tagged) does nothing.
+
 ## Reporting Issues
 
 When reporting bugs or requesting features:

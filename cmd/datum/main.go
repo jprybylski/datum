@@ -27,6 +27,10 @@ import (
 	_ "github.com/jprybylski/datum/internal/handlers/http"
 )
 
+// version is set at build time via -ldflags "-X main.version=vX.Y.Z" (see .goreleaser.yml).
+// Locally built binaries (plain "go build") keep the "dev" default.
+var version = "dev"
+
 // usage prints help text to stdout.
 //
 // This is called when the user provides no arguments or an invalid command.
@@ -38,6 +42,7 @@ func usage() {
 Usage:
   datum [--config .data.yaml] [--lock .data.lock.yaml] [--timeout 5m] [--concurrency 1] check
   datum [--config .data.yaml] [--lock .data.lock.yaml] [--timeout 5m] [--concurrency 1] fetch [ID ...]
+  datum --version
 `)
 }
 
@@ -59,14 +64,21 @@ func run(args []string) int {
 	var cfgPath, lockPath string
 	var timeout time.Duration
 	var concurrency int
+	var showVersion bool
 	fs.StringVar(&cfgPath, "config", ".data.yaml", "path to config YAML")
 	fs.StringVar(&lockPath, "lock", ".data.lock.yaml", "path to lock YAML")
 	fs.DurationVar(&timeout, "timeout", 5*time.Minute, "overall timeout for the whole check/fetch run (e.g. 30s, 5m, 1h); 0 disables it")
 	fs.IntVar(&concurrency, "concurrency", 1, "number of datasets to process in parallel (default: sequential)")
+	fs.BoolVar(&showVersion, "version", false, "print the datum version and exit")
 
 	if err := fs.Parse(args); err != nil {
 		usage()
 		return 2
+	}
+
+	if showVersion {
+		fmt.Println("datum", version)
+		return 0
 	}
 
 	// Require at least one non-flag argument (the subcommand)

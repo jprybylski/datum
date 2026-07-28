@@ -1,0 +1,51 @@
+version: 2
+
+project_name: datum
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: datum
+    main: ./cmd/datum
+    binary: datum
+    tags:
+      - git
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Tag}}
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+
+# Release notes come from the matching CHANGELOG.md section instead (passed via
+# `goreleaser release --release-notes=...` in .github/workflows/release.yml), so skip
+# goreleaser's own commit-log-based changelog generation.
+changelog:
+  disable: true
+
+release:
+  github:
+    owner: jprybylski
+    name: datum

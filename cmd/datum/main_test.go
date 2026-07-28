@@ -19,6 +19,12 @@ func TestRun(t *testing.T) {
 		}
 	})
 
+	t.Run("--version exits 0 without requiring a subcommand", func(t *testing.T) {
+		if code := run([]string{"--version"}); code != 0 {
+			t.Errorf("run([--version]) = %d, want 0", code)
+		}
+	})
+
 	t.Run("unknown flag exits 2", func(t *testing.T) {
 		if code := run([]string{"--not-a-real-flag", "check"}); code != 2 {
 			t.Errorf("run([--not-a-real-flag check]) = %d, want 2", code)

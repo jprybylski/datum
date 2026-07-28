@@ -1,0 +1,80 @@
+name: Release
+
+# Bumping VERSION and merging that into main is what triggers a release. This is a single
+# workflow (not two chained ones) deliberately: a tag pushed by a workflow using the default
+# GITHUB_TOKEN does NOT trigger other workflows (GitHub's loop-prevention), so a separate
+# "create the tag" workflow feeding an "on tag push" release workflow would silently never fire
+# the second half. Tagging and publishing happen back-to-back in one job instead.
+on:
+  push:
+    branches: [main]
+    paths:
+      - VERSION
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read version
+        id: version
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Check if this version was already released
+        id: check
+        run: |
+          if git rev-parse "${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract release notes from CHANGELOG.md
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          awk -v ver="${{ steps.version.outputs.version }}" '
+            $0 ~ ("^## \\[" ver "\\]") {flag=1; next}
+            /^## \[/ {flag=0}
+            flag {print}
+          ' CHANGELOG.md > release_notes.md
+          if [ ! -s release_notes.md ]; then
+            echo "::error::CHANGELOG.md has no '## [${{ steps.version.outputs.version }}]' section - add one (release notes are pulled from it) before bumping VERSION."
+            exit 1
+          fi
+          cat release_notes.md
+
+      - name: Create and push tag
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.version.outputs.tag }}" -m "Release ${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
+
+      - name: Set up Go
+        if: steps.check.outputs.exists == 'false'
+        uses: actions/setup-go@v6
+        with:
+          go-version: 'stable'
+          cache: false
+
+      - name: Run GoReleaser
+        if: steps.check.outputs.exists == 'false'
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: latest
+          args: release --clean --release-notes=release_notes.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

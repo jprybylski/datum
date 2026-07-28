@@ -1,6 +1,7 @@
 # Datum
 
 [![CI](https://github.com/jprybylski/datum/actions/workflows/ci.yml/badge.svg)](https://github.com/jprybylski/datum/actions/workflows/ci.yml)
+[![Latest Release](https://img.shields.io/github/v/release/jprybylski/datum)](https://github.com/jprybylski/datum/releases/latest)
 [![codecov](https://codecov.io/gh/jprybylski/datum/branch/main/graph/badge.svg)](https://codecov.io/gh/jprybylski/datum)
 [![Go Report Card](https://goreportcard.com/badge/github.com/jprybylski/datum?style=flat)](https://goreportcard.com/report/github.com/jprybylski/datum)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/jprybylski/datum)](https://github.com/jprybylski/datum/blob/main/go.mod)
@@ -98,7 +99,13 @@ This checks if the remote data has changed. Based on your policy:
 
 ## Installation
 
-### Prerequisites
+### Prebuilt Binaries
+
+Download a binary for Linux, macOS, or Windows (amd64/arm64) from the
+[latest release](https://github.com/jprybylski/datum/releases/latest) - each one is built with
+git support included. Verify against `checksums.txt` in the same release if you want.
+
+### Prerequisites (building from source)
 
 - Go 1.25 or later
 - Git (if you want git repository support)

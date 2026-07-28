@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-28
+
 ### Added
 - Directory sources for the `file` handler: pointing `source.path` at a directory (auto-detected)
   recreates the whole tree under `target`, with an aggregate `dirsha256:` fingerprint and
@@ -16,10 +18,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bounds the entire run via `context.Context` so a hung source can't block the process forever;
   `--concurrency` (default `1`) processes datasets in parallel while keeping output in the
   original config-file order regardless of completion order.
+- `--version` flag, printing the build's version (set via `-ldflags -X main.version=...` in
+  release builds; local `go build` binaries report `dev`).
 - Docker-based integration test suite (`test/integration/`, run via
   `scripts/test-integration.sh`) exercising the git handler against a real git-over-SSH server -
   covering the real SSH transport and host-key verification behavior that in-process unit tests
-  can't reach.
+  can't reach. `scripts/sandbox.sh` brings up the same server as a persistent, manually
+  resettable sandbox (`up` / `down` / `reset` / `status`) for trying `datum` against it by hand,
+  with a ready-made `test/integration/sandbox.data.yaml`.
+- Documentation site under `docs/`, published via GitHub Pages
+  (`.github/workflows/pages.yml`) - installation, configuration, commands, handlers, examples,
+  tool comparison, and architecture/development pages with real navigation and search. The
+  README is now a shorter landing page linking out to it instead of holding everything inline.
+- Release automation: pushing a `VERSION` bump to `main` tags and publishes a GitHub Release via
+  goreleaser (`.goreleaser.yml`, `.github/workflows/tag-release.yml` +
+  `.github/workflows/release.yml`), with cross-compiled binaries for Linux/macOS/Windows
+  (amd64+arm64), checksums, and this changelog's matching section as release notes.
 
 ### Fixed
 - **Security:** the git handler's SSH auth no longer unconditionally disables host-key
@@ -35,6 +49,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Check's `update` policy no longer silently keeps a stale fingerprint when a fetch succeeds but
   the immediate post-fetch re-fingerprint fails; it's now treated as a failed attempt (matching
   `fetch`'s existing behavior), so the next source is tried instead.
+- `writeLock` now creates its lockfile's parent directory if it doesn't exist yet, matching every
+  handler's own file-write path - a fresh `--lock` path pointing into a not-yet-created directory
+  used to fail with a confusing "no such file or directory".
 - **Security:** resolved all 27 open Dependabot alerts (13 critical/high) by updating
   `github.com/go-git/go-git/v5` (v5.13.0 → v5.19.1), `golang.org/x/crypto` (v0.36.0 → v0.54.0),
   and `golang.org/x/net` (v0.38.0 → v0.57.0), which pulled in patched transitive dependencies
@@ -119,4 +136,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Git authentication support (HTTPS tokens, SSH keys)
 - No credential storage in configuration files
 
+[1.2.0]: https://github.com/jprybylski/datum/releases/tag/v1.2.0
 [1.0.0]: https://github.com/jprybylski/datum/releases/tag/v1.0.0
