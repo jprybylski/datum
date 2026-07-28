@@ -61,5 +61,5 @@ datum --config .data.yaml fetch dataset1 dataset2
 3. Saves files to the target locations
 4. Updates the lockfile
 
-Next: [Handlers]({% link handlers.md %}) for what each source type supports, or
-[Examples]({% link examples.md %}) to see full working configs.
+Next: [Handlers]({{ '/handlers.html' | relative_url }}) for what each source type supports, or
+[Examples]({{ '/examples.html' | relative_url }}) to see full working configs.

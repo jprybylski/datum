@@ -51,7 +51,7 @@ With datum:
 - Single source of truth in your configuration file
 
 Curious how this compares to DVC, pins, Pooch, Quilt, LakeFS, or Pachyderm? See
-[Comparison with Other Tools]({% link comparison.md %}).
+[Comparison with Other Tools]({{ '/comparison.html' | relative_url }}).
 
 ## Quick Start
 
@@ -92,18 +92,18 @@ This checks if the remote data has changed. Based on your policy:
 - **update**: Automatically downloads the new version
 - **log**: Reports changes but doesn't fail
 
-Ready for more? Head to [Installation]({% link installation.md %}) or jump straight to
-[Configuration]({% link configuration.md %}).
+Ready for more? Head to [Installation]({{ '/installation.html' | relative_url }}) or jump straight to
+[Configuration]({{ '/configuration.html' | relative_url }}).
 
 ## Where to next
 
 | Page | What's there |
 |---|---|
-| [Installation]({% link installation.md %}) | Prerequisites, building from source, build tags |
-| [Configuration]({% link configuration.md %}) | `.data.yaml` structure, multi-source fallback, policies, IDE schema support |
-| [Commands]({% link commands.md %}) | `check` / `fetch`, exit codes, `--timeout` / `--concurrency` |
-| [Handlers]({% link handlers.md %}) | HTTP, File (incl. directory sources), Command, and Git handlers |
-| [Examples]({% link examples.md %}) | Seven complete, runnable example configurations |
-| [Comparison]({% link comparison.md %}) | How Datum differs from DVC, pins, Pooch, Quilt, LakeFS, Pachyderm |
-| [Architecture & Development]({% link architecture.md %}) | Project structure, adding a handler, running tests |
-| [FAQ]({% link faq.md %}) | Common questions |
+| [Installation]({{ '/installation.html' | relative_url }}) | Prerequisites, building from source, build tags |
+| [Configuration]({{ '/configuration.html' | relative_url }}) | `.data.yaml` structure, multi-source fallback, policies, IDE schema support |
+| [Commands]({{ '/commands.html' | relative_url }}) | `check` / `fetch`, exit codes, `--timeout` / `--concurrency` |
+| [Handlers]({{ '/handlers.html' | relative_url }}) | HTTP, File (incl. directory sources), Command, and Git handlers |
+| [Examples]({{ '/examples.html' | relative_url }}) | Seven complete, runnable example configurations |
+| [Comparison]({{ '/comparison.html' | relative_url }}) | How Datum differs from DVC, pins, Pooch, Quilt, LakeFS, Pachyderm |
+| [Architecture & Development]({{ '/architecture.html' | relative_url }}) | Project structure, adding a handler, running tests |
+| [FAQ]({{ '/faq.html' | relative_url }}) | Common questions |

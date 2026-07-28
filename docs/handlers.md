@@ -66,7 +66,7 @@ target: data/dataset/
 - Directory sync isn't a single atomic operation; files are copied/removed one at a time. A
   crash mid-fetch can leave `target` partially updated - re-running `fetch` finishes the job.
 
-See it in action: [Example 7 - Directory Sync]({% link examples.md %}#example-7-file-handler---directory-sync).
+See it in action: [Example 7 - Directory Sync]({{ '/examples.html' | relative_url }}#example-7-file-handler---directory-sync).
 
 ## Command Handler (built-in)
 
@@ -141,5 +141,5 @@ export DATUM_GIT_INSECURE_HOST_KEY=1  # skips SSH host-key verification - MITM r
 
 ---
 
-Next: [Examples]({% link examples.md %}) for complete, runnable configs using each of these
+Next: [Examples]({{ '/examples.html' | relative_url }}) for complete, runnable configs using each of these
 handlers.

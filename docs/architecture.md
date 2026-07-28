@@ -129,7 +129,7 @@ This file only compiles when you use `-tags git`, making git support optional.
 
 Functions use `context.Context` for:
 - Cancellation signals
-- Timeouts (see `--timeout` on the [Commands]({% link commands.md %}) page)
+- Timeouts (see `--timeout` on the [Commands]({{ '/commands.html' | relative_url }}) page)
 - Request-scoped values
 
 ## Error Handling

@@ -6,7 +6,25 @@ nav_order: 2
 
 # Installation
 
-## Prerequisites
+## Prebuilt Binaries
+
+If you don't want to clone the repo or have Go installed, grab a binary from the
+[latest release](https://github.com/jprybylski/datum/releases/latest) - Linux, macOS, and
+Windows, each for amd64 and arm64, all built with git support included. Download the archive
+for your platform, extract it, and run the `datum` binary inside.
+
+With the [GitHub CLI](https://cli.github.com/) this can be one command, and always gets the
+current release without you needing to know the version number:
+
+```bash
+gh release download --repo jprybylski/datum --pattern '*linux_amd64*'   # pick your platform/arch
+tar -xzf datum_*_linux_amd64.tar.gz  # or unzip on Windows
+./datum --version
+```
+
+Each release also includes a `checksums.txt` if you want to verify the download.
+
+## Prerequisites (building from source)
 
 - Go 1.25 or later
 - Git (if you want git repository support)
@@ -60,4 +78,4 @@ GOOS=windows GOARCH=amd64 go build -o bin/datum.exe ./cmd/datum
 GOOS=darwin GOARCH=amd64 go build -o bin/datum-mac ./cmd/datum
 ```
 
-Next: [Configuration]({% link configuration.md %}) to write your first `.data.yaml`.
+Next: [Configuration]({{ '/configuration.html' | relative_url }}) to write your first `.data.yaml`.

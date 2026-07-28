@@ -251,7 +251,7 @@ datasets:
 Pointing the file handler's `path` at a directory instead of a single file tracks the whole tree
 as one dataset: every file gets recreated under `target`, and files removed from `source-data/`
 are removed from `synced-data/` on the next fetch. See
-[Directory sources]({% link handlers.md %}#directory-sources) for details.
+[Directory sources]({{ '/handlers.html' | relative_url }}#directory-sources) for details.
 
 **Try it:**
 ```bash
