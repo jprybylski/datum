@@ -76,7 +76,7 @@ datasets:
 ### 2. Fetch the data
 
 ```bash
-datum --config .data.yaml fetch
+datum fetch
 ```
 
 This downloads the file and creates a `.data.lock.yaml` with its fingerprint.
@@ -84,7 +84,7 @@ This downloads the file and creates a `.data.lock.yaml` with its fingerprint.
 ### 3. Verify data integrity
 
 ```bash
-datum --config .data.yaml check
+datum check
 ```
 
 This checks if the remote data has changed. Based on your policy:

@@ -6,8 +6,12 @@ nav_order: 4
 
 # Commands
 
-Both commands accept two flags in addition to `--config`/`--lock`:
+Both commands accept four flags:
 
+- `--config` (default `.data.yaml`) - path to the config file. Only needed if yours isn't named
+  the default.
+- `--lock` (default `.data.lock.yaml`) - path to the lockfile. Same deal - only needed for a
+  non-default name.
 - `--timeout` (default `5m`) - overall deadline for the whole run, covering every dataset's
   handler operations (HTTP requests, git fetches, shell commands). A hung source can't block the
   process forever; when it fires, in-flight datasets fail with a `context deadline exceeded`
@@ -19,7 +23,10 @@ Both commands accept two flags in addition to `--config`/`--lock`:
   treated as `1`.
 
 ```bash
-datum --config .data.yaml --timeout 2m --concurrency 4 check
+datum --timeout 2m --concurrency 4 check
+
+# Only needed when the config/lock files aren't named the defaults:
+datum --config other.yaml --lock other.lock.yaml check
 ```
 
 ## `datum check`
@@ -27,7 +34,7 @@ datum --config .data.yaml --timeout 2m --concurrency 4 check
 Verifies all configured datasets against their recorded fingerprints.
 
 ```bash
-datum --config .data.yaml --lock .data.lock.yaml check
+datum check
 ```
 
 **Exit codes:**
@@ -49,10 +56,10 @@ Downloads data from external sources and updates the lockfile.
 
 ```bash
 # Fetch all datasets
-datum --config .data.yaml fetch
+datum fetch
 
 # Fetch specific datasets by ID
-datum --config .data.yaml fetch dataset1 dataset2
+datum fetch dataset1 dataset2
 ```
 
 **What happens:**
