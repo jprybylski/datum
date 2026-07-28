@@ -35,6 +35,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Check's `update` policy no longer silently keeps a stale fingerprint when a fetch succeeds but
   the immediate post-fetch re-fingerprint fails; it's now treated as a failed attempt (matching
   `fetch`'s existing behavior), so the next source is tried instead.
+- **Security:** resolved all 27 open Dependabot alerts (13 critical/high) by updating
+  `github.com/go-git/go-git/v5` (v5.13.0 → v5.19.1), `golang.org/x/crypto` (v0.36.0 → v0.54.0),
+  and `golang.org/x/net` (v0.38.0 → v0.57.0), which pulled in patched transitive dependencies
+  (`go-billy`, `circl`) as well. Verified against the full test suite, both build tag variants,
+  and the Docker-based SSH integration tests. **This raises the minimum Go version to 1.25**
+  (go-git v5.19.1's own `go.mod` requires it) - CI, README, and CONTRIBUTING.md updated
+  accordingly.
 
 ### Changed
 - Test coverage: `cmd/datum`, the `git` handler, and `internal/runtime` were previously untested

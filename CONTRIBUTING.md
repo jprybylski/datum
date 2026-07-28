@@ -212,7 +212,7 @@ If your contribution requires optional dependencies:
 
 All pull requests must pass CI checks:
 
-- **Tests**: Run on Ubuntu, macOS, and Windows with Go 1.23 and stable
+- **Tests**: Run on Ubuntu, macOS, and Windows with Go 1.25 and stable
 - **Build**: Verify compilation with and without build tags
 - **Lint**: Pass golangci-lint checks (v2.6.0)
 - **Examples**: All examples must work correctly
