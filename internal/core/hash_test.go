@@ -3,6 +3,7 @@ package core
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -65,6 +66,35 @@ func TestHashFile_NonExistentFile(t *testing.T) {
 	_, err := HashFile("/nonexistent/file/that/should/not/exist.txt")
 	if err == nil {
 		t.Error("HashFile() expected error for non-existent file, got nil")
+	}
+}
+
+func TestHashFile_DirectoryPath(t *testing.T) {
+	// os.Open succeeds on a directory (it's a valid file descriptor), but reading from it as a
+	// byte stream fails - this exercises HashFile's io.Copy error branch, distinct from the
+	// os.Open error branch already covered by the non-existent-file case above.
+	if runtime.GOOS == "windows" {
+		t.Skip("reading a directory as a byte stream doesn't reliably fail the same way on Windows")
+	}
+	dir := t.TempDir()
+	if _, err := HashFile(dir); err == nil {
+		t.Error("HashFile() on a directory expected an error, got nil")
+	}
+}
+
+func TestHashDir_UnreadableFile(t *testing.T) {
+	// A broken symlink is listed by WalkDir (it's not a directory) but fails to open - this
+	// exercises HashDir's propagation of a per-file HashFile error.
+	if runtime.GOOS == "windows" {
+		t.Skip("creating symlinks on Windows requires elevated privileges")
+	}
+	dir := t.TempDir()
+	link := filepath.Join(dir, "broken-link")
+	if err := os.Symlink(filepath.Join(dir, "does-not-exist"), link); err != nil {
+		t.Skipf("could not create symlink: %v", err)
+	}
+	if _, err := HashDir(dir); err == nil {
+		t.Error("HashDir() with an unreadable file expected an error, got nil")
 	}
 }
 
