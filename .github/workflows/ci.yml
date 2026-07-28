@@ -86,7 +86,12 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v6
       with:
-        go-version: 'stable'
+        # Pinned rather than 'stable': golangci-lint v2.6.0's own binary is built against an
+        # older Go toolchain and panics ("file requires newer Go version") when it type-checks
+        # code built with a newer one - 'stable' now resolves to Go 1.26, which triggers this.
+        # Plain `go build`/`go test` don't have this problem, only golangci-lint's embedded
+        # go/types does. Bump this alongside golangci-lint's own version, not independently.
+        go-version: '1.25'
         cache: false
 
     - name: Run golangci-lint
