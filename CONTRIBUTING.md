@@ -160,6 +160,28 @@ go test ./internal/core
 go test ./internal/handlers/http
 ```
 
+### Docker-Based Git Testing
+
+The git handler's real SSH transport and host-key verification behavior can't be exercised by
+fully in-process unit tests, so there's a separate Docker-backed setup for it in
+`test/integration/` (a minimal git-over-SSH server, defined in `test/integration/gitserver/`).
+Requires Docker.
+
+```bash
+# Automated: builds the server, runs the integration test suite against it, tears it down
+bash scripts/test-integration.sh
+
+# Interactive: brings the same server up and leaves it running so you can poke at it by hand
+# (run the real datum CLI against it, git clone it, push more commits, etc.)
+bash scripts/sandbox.sh up
+bash scripts/sandbox.sh status   # print connection info again any time
+bash scripts/sandbox.sh reset    # discard any changes, back to the pristine fixture repo
+bash scripts/sandbox.sh down     # stop it
+```
+
+`scripts/sandbox.sh up`/`reset` print a ready-to-run `datum` command using the sample config at
+`test/integration/sandbox.data.yaml`.
+
 ### Writing Tests
 
 - Use table-driven tests for testing multiple scenarios

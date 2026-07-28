@@ -3,6 +3,7 @@ package core
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -74,6 +75,23 @@ items:
 			t.Error("readLock() expected error for invalid YAML, got nil")
 		}
 	})
+
+	t.Run("valid YAML with no items key initializes an empty map", func(t *testing.T) {
+		// version-only content parses fine but leaves Items at its zero value (nil) - readLock
+		// should defensively initialize it rather than leave callers to nil-check the map.
+		path := filepath.Join(tmpDir, "no_items.lock.yaml")
+		if err := os.WriteFile(path, []byte("version: 1\n"), 0o644); err != nil {
+			t.Fatalf("failed to write test file: %v", err)
+		}
+
+		lk, err := readLock(path)
+		if err != nil {
+			t.Fatalf("readLock() error = %v", err)
+		}
+		if lk.Items == nil {
+			t.Error("Items should be initialized to an empty map, not left nil")
+		}
+	})
 }
 
 func TestWriteLock(t *testing.T) {
@@ -136,6 +154,43 @@ func TestWriteLock(t *testing.T) {
 		}
 		if _, err := os.Stat(lockPath); err != nil {
 			t.Errorf("lock file was not created: %v", err)
+		}
+	})
+
+	t.Run("write fails when a path component is a file, not a directory", func(t *testing.T) {
+		// writeLock's own MkdirAll error branch (distinct from the "succeeds" case above):
+		// mkdir can't create a directory through a path component that's already a regular file.
+		blocker := filepath.Join(tmpDir, "blocker-file")
+		if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
+			t.Fatalf("failed to create blocker file: %v", err)
+		}
+		lockPath := filepath.Join(blocker, "sub", "test.lock.yaml")
+
+		if err := writeLock(lockPath, &Lock{Version: 1}); err == nil {
+			t.Error("writeLock() expected error when parent path is blocked by a file, got nil")
+		}
+	})
+
+	t.Run("write fails when the directory isn't writable", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("Unix permission bits don't apply the same way on Windows")
+		}
+		readOnlyDir := filepath.Join(tmpDir, "readonly")
+		if err := os.MkdirAll(readOnlyDir, 0o755); err != nil {
+			t.Fatalf("failed to create dir: %v", err)
+		}
+		if err := os.Chmod(readOnlyDir, 0o555); err != nil {
+			t.Fatalf("failed to chmod dir: %v", err)
+		}
+		defer func() {
+			if err := os.Chmod(readOnlyDir, 0o755); err != nil {
+				t.Logf("failed to restore dir permissions for cleanup: %v", err)
+			}
+		}()
+
+		lockPath := filepath.Join(readOnlyDir, "test.lock.yaml")
+		if err := writeLock(lockPath, &Lock{Version: 1}); err == nil {
+			t.Error("writeLock() expected error when the directory isn't writable, got nil")
 		}
 	})
 

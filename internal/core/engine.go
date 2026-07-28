@@ -169,9 +169,10 @@ func Check(ctx context.Context, cfgPath, lockPath string, concurrency int) int {
 	}
 
 	// Load lockfile (or create empty one if it doesn't exist)
-	lk, _ := readLock(lockPath)
-	if lk.Items == nil {
-		lk.Items = map[string]*LockItem{}
+	lk, err := readLock(lockPath)
+	if err != nil {
+		fmt.Printf("lock error: %v\n", err)
+		return 2
 	}
 	store := &lockStore{lk: lk}
 
@@ -350,9 +351,10 @@ func Fetch(ctx context.Context, cfgPath, lockPath string, ids []string, concurre
 	}
 
 	// Load lockfile (or create empty one if it doesn't exist)
-	lk, _ := readLock(lockPath)
-	if lk.Items == nil {
-		lk.Items = map[string]*LockItem{}
+	lk, err := readLock(lockPath)
+	if err != nil {
+		fmt.Printf("lock error: %v\n", err)
+		return 2
 	}
 	store := &lockStore{lk: lk}
 

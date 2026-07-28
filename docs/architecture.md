@@ -224,6 +224,20 @@ bash scripts/test-integration.sh
 This builds an ephemeral SSH keypair and git server container, runs the tests, and tears
 everything down again - nothing persists between runs.
 
+**Manual sandbox:** `scripts/sandbox.sh` brings up the same git-over-SSH server but leaves it
+running instead of tearing it down, for trying the real `datum` CLI against it by hand:
+
+```bash
+bash scripts/sandbox.sh up      # build + start, prints a ready-to-run datum command
+bash scripts/sandbox.sh status  # show connection info again
+bash scripts/sandbox.sh reset   # discard any changes, back to the pristine fixture repo
+bash scripts/sandbox.sh down    # stop it (keeps the generated SSH key for next time)
+```
+
+The printed `datum` command uses the sample config at `test/integration/sandbox.data.yaml`,
+which has one dataset pinned to the fixture repo's `main` branch and one pinned to its
+`v1.0.0` tag.
+
 ## Code Quality
 
 ```bash
