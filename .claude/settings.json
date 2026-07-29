@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // empty' | grep -qE '(^|/)(cmd/datum|internal/(core|handlers))/' && echo '{\"systemMessage\": \"CLI output code changed - regenerate the demo tape GIFs (docs/assets/img) via the regenerate-tapes skill before merging.\"}' || true"
+          }
+        ]
+      }
+    ]
+  }
+}
