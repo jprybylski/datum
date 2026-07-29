@@ -164,6 +164,50 @@ datasets:
 	}
 }
 
+func TestCheck_JSONOutput_LockWriteError(t *testing.T) {
+	skipUnlessCanDenyRead(t)
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	targetFile := filepath.Join(tmpDir, "target.txt")
+	mustWriteFile(t, configPath, []byte(`version: 1
+datasets:
+  - id: demo
+    source:
+      type: mock
+    target: `+targetFile+`
+    policy: log
+`))
+
+	readOnlyDir := filepath.Join(tmpDir, "readonly")
+	if err := os.MkdirAll(readOnlyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(readOnlyDir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	defer chmodOrLog(t, readOnlyDir, 0o755)
+	lockPath := filepath.Join(readOnlyDir, "lock.yaml")
+
+	var out string
+	var code int
+	withJSONOutput(t, func() {
+		out = captureStdout(t, func() {
+			code = Check(context.Background(), configPath, lockPath, 1)
+		})
+	})
+	if code != 1 {
+		t.Fatalf("Check() = %d, want 1 when the lockfile can't be written", code)
+	}
+
+	var report Report
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatalf("output isn't valid JSON: %v\noutput: %s", err, out)
+	}
+	if report.LockWriteError == "" {
+		t.Error("expected a non-empty LockWriteError in the report")
+	}
+}
+
 func TestCheck_JSONOutput_ConfigError(t *testing.T) {
 	tmpDir := t.TempDir()
 

@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/jprybylski/datum/internal/core"
 )
 
 func TestRun(t *testing.T) {
@@ -89,6 +91,37 @@ func TestRun(t *testing.T) {
 		code := run([]string{"--config", cfgPath, "--lock", lockPath, "fetch", "only_one"})
 		if code != 0 {
 			t.Errorf("run(fetch only_one) = %d, want 0", code)
+		}
+	})
+
+	t.Run("--no-color and --json set the corresponding core package vars", func(t *testing.T) {
+		defer func() {
+			core.NoColor = false
+			core.JSONOutput = false
+		}()
+
+		tmpDir := t.TempDir()
+		srcFile := filepath.Join(tmpDir, "src.txt")
+		if err := os.WriteFile(srcFile, []byte("hello"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		targetFile := filepath.Join(tmpDir, "target.txt")
+		cfgPath := filepath.Join(tmpDir, ".data.yaml")
+		cfgContent := "version: 1\ndatasets:\n  - id: main_test\n    source:\n      type: file\n      path: " + srcFile + "\n    target: " + targetFile + "\n"
+		if err := os.WriteFile(cfgPath, []byte(cfgContent), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		lockPath := filepath.Join(tmpDir, ".data.lock.yaml")
+
+		code := run([]string{"--no-color", "--json", "--config", cfgPath, "--lock", lockPath, "fetch"})
+		if code != 0 {
+			t.Errorf("run(fetch with --no-color --json) = %d, want 0", code)
+		}
+		if !core.NoColor {
+			t.Error("core.NoColor = false, want true after --no-color")
+		}
+		if !core.JSONOutput {
+			t.Error("core.JSONOutput = false, want true after --json")
 		}
 	})
 
