@@ -7,14 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-07-28
+
+### Added
+- Colorized `check`/`fetch` output: status tags (`[OK  ]` green, `[FAIL]`/`[ERR ]` red,
+  `[WARN]`/`[STALE]` yellow, `[UPD ]`/`[FETCH]` cyan) are colored when stdout is a terminal, and
+  automatically plain otherwise - piped output, `NO_COLOR` (per [no-color.org](https://no-color.org/)),
+  and the new `--no-color` flag all suppress it.
+- `--json` flag for `check`/`fetch`: prints a single JSON document (`{"results": [...]}`, one
+  object per dataset with `id`/`status`/fingerprints/`message`/`warnings`) instead of colorized
+  text, for scripting and other programmatic consumers. Config/lockfile-level errors print as
+  `{"error": "..."}` under `--json` instead of plain text. Exit codes are unchanged either way.
+
+### Changed
+- `[STALE]`/`[FAIL]` lines showing a changed fingerprint now print the old (dimmed) and new
+  fingerprint on their own indented lines instead of a single `(lock="..." -> now="...")` line -
+  fingerprints are frequently full sha256 hashes or ETags 60+ characters long, and quoting them
+  with `%q` made them read like an escaped Go literal rather than a value to compare. A dataset
+  with no prior lock entry now shows `lock: (none)` instead of the internal `lock="<nil>"`.
+- Test coverage raised from 85.5% to 96.7% overall, closing most of the error-handling branches
+  Codecov flagged as untested (all packages now above 90%).
+
 ### Fixed
 - `check`/`fetch` no longer panic when the lockfile exists but contains invalid YAML (as opposed
   to not existing, which was already handled gracefully) - they now exit `2` with a clear "lock
   error" message, same as a config parse error.
-
-### Changed
-- Test coverage raised from 85.5% to 96.7% overall, closing most of the error-handling branches
-  Codecov flagged as untested (all packages now above 90%).
 
 ## [1.2.0] - 2026-07-28
 

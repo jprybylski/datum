@@ -83,7 +83,7 @@ func TestSourceAttempt_UnknownSourceType(t *testing.T) {
 
 	t.Run("single source", func(t *testing.T) {
 		var w strings.Builder
-		_, err := sourceAttempt(&w, "ds1", []registry.Source{{Type: "nonexistent-handler"}}, attempt)
+		_, err := sourceAttempt(&w, nil, "ds1", []registry.Source{{Type: "nonexistent-handler"}}, attempt)
 		if err == nil {
 			t.Fatal("expected error for unknown source type, got nil")
 		}
@@ -99,7 +99,7 @@ func TestSourceAttempt_UnknownSourceType(t *testing.T) {
 	t.Run("multiple sources prints a warn line per failure", func(t *testing.T) {
 		var w strings.Builder
 		sources := []registry.Source{{Type: "nonexistent-a"}, {Type: "nonexistent-b"}}
-		_, err := sourceAttempt(&w, "ds1", sources, attempt)
+		_, err := sourceAttempt(&w, nil, "ds1", sources, attempt)
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
@@ -119,7 +119,7 @@ func TestSourceAttempt_EmptyWarnLabel(t *testing.T) {
 	attempt := func(f registry.Fetcher, source registry.Source) (string, string, error) {
 		return "", "", errors.New("boom")
 	}
-	_, err := sourceAttempt(&w, "ds1", sources, attempt)
+	_, err := sourceAttempt(&w, nil, "ds1", sources, attempt)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -173,13 +173,17 @@ func TestCheckOneDataset_LocalHashError(t *testing.T) {
 	ds := Dataset{ID: "ds1", Target: target, Source: registry.Source{Type: "mock"}}
 	store := &lockStore{lk: &Lock{Items: map[string]*LockItem{}}}
 	var w strings.Builder
+	res := &Result{}
 
-	code := checkOneDataset(context.Background(), &w, ds, "log", store, time.Now().UTC())
+	code := checkOneDataset(context.Background(), &w, res, ds, "log", store, time.Now().UTC())
 	if code != 0 {
 		t.Errorf("checkOneDataset() = %d, want 0 (log policy doesn't fail on local hash error)", code)
 	}
 	if !strings.Contains(w.String(), "local hash") {
 		t.Errorf("expected output to mention the local hash error, got %q", w.String())
+	}
+	if len(res.Warnings) == 0 || !strings.Contains(res.Warnings[0], "local hash") {
+		t.Errorf("expected Result.Warnings to mention the local hash error, got %v", res.Warnings)
 	}
 }
 
@@ -196,7 +200,7 @@ func TestCheckOneDataset_UpdatePolicy_AllSourcesFailToFetch(t *testing.T) {
 	var w strings.Builder
 	now := time.Now().UTC()
 
-	code := checkOneDataset(context.Background(), &w, ds, "update", store, now)
+	code := checkOneDataset(context.Background(), &w, nil, ds, "update", store, now)
 	if code != 1 {
 		t.Errorf("checkOneDataset() = %d, want 1", code)
 	}
@@ -215,13 +219,20 @@ func TestCheckOneDataset_UpdatePolicy_LocalHashErrorAfterFetch(t *testing.T) {
 	ds := Dataset{ID: "ds1", Target: target, Source: registry.Source{Type: "mockunreadable"}}
 	store := &lockStore{lk: &Lock{Items: map[string]*LockItem{}}}
 	var w strings.Builder
+	res := &Result{}
 
-	code := checkOneDataset(context.Background(), &w, ds, "update", store, time.Now().UTC())
+	code := checkOneDataset(context.Background(), &w, res, ds, "update", store, time.Now().UTC())
 	if code != 0 {
 		t.Errorf("checkOneDataset() = %d, want 0 (fetch succeeded even though hashing failed after)", code)
 	}
 	if !strings.Contains(w.String(), "local hash after fetch") {
 		t.Errorf("expected a warning about hashing after fetch, got %q", w.String())
+	}
+	if res.Status != StatusUpdated {
+		t.Errorf("Status = %q, want %q", res.Status, StatusUpdated)
+	}
+	if len(res.Warnings) == 0 || !strings.Contains(res.Warnings[0], "local hash after fetch") {
+		t.Errorf("expected Result.Warnings to mention hashing after fetch, got %v", res.Warnings)
 	}
 	chmodOrLog(t, target, 0o644) // let TempDir clean up
 }
@@ -232,13 +243,17 @@ func TestCheckOneDataset_LogPolicy_NotStale(t *testing.T) {
 		"ds1": {RemoteFingerprint: "mock-fp"},
 	}}}
 	var w strings.Builder
+	res := &Result{}
 
-	code := checkOneDataset(context.Background(), &w, ds, "log", store, time.Now().UTC())
+	code := checkOneDataset(context.Background(), &w, res, ds, "log", store, time.Now().UTC())
 	if code != 0 {
 		t.Errorf("checkOneDataset() = %d, want 0", code)
 	}
 	if !strings.Contains(w.String(), "[OK  ]") {
 		t.Errorf("expected up-to-date [OK] line, got %q", w.String())
+	}
+	if res.Status != StatusOK {
+		t.Errorf("Status = %q, want %q", res.Status, StatusOK)
 	}
 }
 
@@ -249,7 +264,7 @@ func TestCheckOneDataset_FailPolicy_NotStale(t *testing.T) {
 	}}}
 	var w strings.Builder
 
-	code := checkOneDataset(context.Background(), &w, ds, "fail", store, time.Now().UTC())
+	code := checkOneDataset(context.Background(), &w, nil, ds, "fail", store, time.Now().UTC())
 	if code != 0 {
 		t.Errorf("checkOneDataset() = %d, want 0", code)
 	}
@@ -263,13 +278,17 @@ func TestCheckOneDataset_UnknownPolicy(t *testing.T) {
 		ds := Dataset{ID: "ds1", Target: filepath.Join(t.TempDir(), "target.txt"), Source: registry.Source{Type: "mock"}}
 		store := &lockStore{lk: &Lock{Items: map[string]*LockItem{}}}
 		var w strings.Builder
+		res := &Result{}
 
-		code := checkOneDataset(context.Background(), &w, ds, "bogus-policy", store, time.Now().UTC())
+		code := checkOneDataset(context.Background(), &w, res, ds, "bogus-policy", store, time.Now().UTC())
 		if code != 1 {
 			t.Errorf("checkOneDataset() = %d, want 1 (unknown policy treated as fail when stale)", code)
 		}
 		if !strings.Contains(w.String(), `unknown policy="bogus-policy"`) {
 			t.Errorf("expected unknown-policy warning, got %q", w.String())
+		}
+		if res.Status != StatusWarn || !strings.Contains(res.Message, `unknown policy="bogus-policy"`) {
+			t.Errorf("Result = %+v, want Status=warn and Message mentioning the unknown policy", res)
 		}
 	})
 
@@ -280,7 +299,7 @@ func TestCheckOneDataset_UnknownPolicy(t *testing.T) {
 		}}}
 		var w strings.Builder
 
-		code := checkOneDataset(context.Background(), &w, ds, "bogus-policy", store, time.Now().UTC())
+		code := checkOneDataset(context.Background(), &w, nil, ds, "bogus-policy", store, time.Now().UTC())
 		if code != 0 {
 			t.Errorf("checkOneDataset() = %d, want 0 (unknown policy, but not stale)", code)
 		}
@@ -387,13 +406,20 @@ func TestFetchOneDataset_LocalHashErrorAfterFetch(t *testing.T) {
 	ds := Dataset{ID: "ds1", Target: target, Source: registry.Source{Type: "mockunreadable"}}
 	store := &lockStore{lk: &Lock{Items: map[string]*LockItem{}}}
 	var w strings.Builder
+	res := &Result{}
 
-	code := fetchOneDataset(context.Background(), &w, ds, store, time.Now().UTC())
+	code := fetchOneDataset(context.Background(), &w, res, ds, store, time.Now().UTC())
 	if code != 0 {
 		t.Errorf("fetchOneDataset() = %d, want 0 (fetch succeeded even though hashing failed after)", code)
 	}
 	if !strings.Contains(w.String(), "local hash after fetch") {
 		t.Errorf("expected a warning about hashing after fetch, got %q", w.String())
+	}
+	if res.Status != StatusFetched {
+		t.Errorf("Status = %q, want %q", res.Status, StatusFetched)
+	}
+	if len(res.Warnings) == 0 || !strings.Contains(res.Warnings[0], "local hash after fetch") {
+		t.Errorf("expected Result.Warnings to mention hashing after fetch, got %v", res.Warnings)
 	}
 	chmodOrLog(t, target, 0o644) // let TempDir clean up
 }
