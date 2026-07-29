@@ -26,14 +26,25 @@ import (
 // source failed. Callers are responsible for the final [ERR ] summary line and any error
 // wrapping they need for storage (e.g. LockItem.InaccessibleError), since those differ slightly
 // between Check() and Fetch().
-func sourceAttempt(w io.Writer, dsID string, sources []registry.Source, attempt func(f registry.Fetcher, source registry.Source) (value, warnLabel string, err error)) (string, error) {
+//
+// res is optional (nil when the caller isn't collecting structured --json output); when non-nil,
+// every [WARN] line's message is also appended to res.Warnings, so JSON output carries the same
+// source-fallback trail as the human-readable text.
+func sourceAttempt(w io.Writer, res *Result, dsID string, sources []registry.Source, attempt func(f registry.Fetcher, source registry.Source) (value, warnLabel string, err error)) (string, error) {
+	warn := func(msg string) {
+		fmt.Fprintf(w, "%s %s: %s\n", colorize(ansiYellow, "[WARN]"), dsID, msg)
+		if res != nil {
+			res.Warnings = append(res.Warnings, msg)
+		}
+	}
+
 	var lastErr error
 	for i, source := range sources {
 		f, ok := registry.Get(source.Type)
 		if !ok {
 			lastErr = fmt.Errorf("unknown source.type=%q", source.Type)
 			if len(sources) > 1 {
-				fmt.Fprintf(w, "[WARN] %s: source %d/%d: %v (trying next source)\n", dsID, i+1, len(sources), lastErr)
+				warn(fmt.Sprintf("source %d/%d: %v (trying next source)", i+1, len(sources), lastErr))
 			}
 			continue
 		}
@@ -43,9 +54,9 @@ func sourceAttempt(w io.Writer, dsID string, sources []registry.Source, attempt 
 			lastErr = err
 			if len(sources) > 1 {
 				if warnLabel != "" {
-					fmt.Fprintf(w, "[WARN] %s: source %d/%d: %s: %v (trying next source)\n", dsID, i+1, len(sources), warnLabel, err)
+					warn(fmt.Sprintf("source %d/%d: %s: %v (trying next source)", i+1, len(sources), warnLabel, err))
 				} else {
-					fmt.Fprintf(w, "[WARN] %s: source %d/%d: %v (trying next source)\n", dsID, i+1, len(sources), err)
+					warn(fmt.Sprintf("source %d/%d: %v (trying next source)", i+1, len(sources), err))
 				}
 			}
 			continue
@@ -54,6 +65,19 @@ func sourceAttempt(w io.Writer, dsID string, sources []registry.Source, attempt 
 		return value, nil
 	}
 	return "", lastErr
+}
+
+// writeFingerprintChange writes a "remote changed" block as a header line naming the dataset,
+// followed by the old (dimmed) and new fingerprint values each on their own indented line.
+// Fingerprints are often full sha256 hashes or ETag values 60+ characters long, so cramming both
+// onto one "(old -> now)" line reads as a wall of hex; splitting them out is far easier to scan.
+// indent should visually line up under dsID, i.e. match the width of "coloredTag " once ANSI
+// codes are stripped (7 spaces for the 6-char tags like "[FAIL] ", 8 for 7-char tags like
+// "[STALE] ").
+func writeFingerprintChange(w io.Writer, coloredTag, indent, dsID, lockfp, fp string) {
+	fmt.Fprintf(w, "%s %s: remote changed\n", coloredTag, dsID)
+	fmt.Fprintf(w, "%slock: %s\n", indent, colorize(ansiDim, lockfp))
+	fmt.Fprintf(w, "%snow:  %s\n", indent, fp)
 }
 
 // fingerprintAttempt builds a sourceAttempt callback that just computes a fingerprint.
@@ -164,35 +188,39 @@ func Check(ctx context.Context, cfgPath, lockPath string, concurrency int) int {
 	// Load configuration file
 	cfg, err := readConfig(cfgPath)
 	if err != nil {
-		fmt.Printf("config error: %v\n", err)
-		return 2
+		return reportError("config error", err)
 	}
 
 	// Load lockfile (or create empty one if it doesn't exist)
 	lk, err := readLock(lockPath)
 	if err != nil {
-		fmt.Printf("lock error: %v\n", err)
-		return 2
+		return reportError("lock error", err)
 	}
 	store := &lockStore{lk: lk}
 
 	now := time.Now().UTC()
 
 	// Process each dataset, buffering its output so results print back in the original
-	// config-file order regardless of how goroutines actually interleave/complete.
+	// config-file order regardless of how goroutines actually interleave/complete. In JSON mode
+	// the text writer is discarded entirely - results[i] carries the structured outcome instead.
 	outputs := make([]string, len(cfg.Datasets))
+	results := make([]Result, len(cfg.Datasets))
 	exitCodes := make([]int, len(cfg.Datasets))
 	runConcurrently(len(cfg.Datasets), concurrency, func(i int) {
 		ds := cfg.Datasets[i]
 		policy := firstNonEmpty(ds.Policy, cfg.Defaults.Policy)
+		results[i].ID = ds.ID
 		var out strings.Builder
-		exitCodes[i] = checkOneDataset(ctx, &out, ds, policy, store, now)
+		w := io.Writer(&out)
+		if JSONOutput {
+			w = io.Discard
+		}
+		exitCodes[i] = checkOneDataset(ctx, w, &results[i], ds, policy, store, now)
 		outputs[i] = out.String()
 	})
 
 	exit := 0
-	for i := range outputs {
-		fmt.Print(outputs[i])
+	for i := range exitCodes {
 		if exitCodes[i] > exit {
 			exit = exitCodes[i]
 		}
@@ -201,10 +229,19 @@ func Check(ctx context.Context, cfgPath, lockPath string, concurrency int) int {
 	// Write updated lockfile back to disk
 	lk.Version = 1
 	lk.LastChecked = &now
-	if err := writeLock(lockPath, lk); err != nil {
-		fmt.Printf("lock write error: %v\n", err)
-		if exit == 0 {
-			exit = 1
+	lockErr := writeLock(lockPath, lk)
+	if lockErr != nil && exit == 0 {
+		exit = 1
+	}
+
+	if JSONOutput {
+		printReport(results, lockErr)
+	} else {
+		for _, out := range outputs {
+			fmt.Print(out)
+		}
+		if lockErr != nil {
+			fmt.Printf("lock write error: %v\n", lockErr)
 		}
 	}
 	return exit
@@ -212,22 +249,35 @@ func Check(ctx context.Context, cfgPath, lockPath string, concurrency int) int {
 
 // checkOneDataset runs Check's per-dataset logic, writing progress lines to w and reading/writing
 // this dataset's LockItem through store. Returns this dataset's contribution to the exit code.
-func checkOneDataset(ctx context.Context, w io.Writer, ds Dataset, policy string, store *lockStore, now time.Time) int {
+//
+// res is optional (nil unless the caller is building --json output); when non-nil it's populated
+// with the same outcome the text lines describe, so the two output modes never disagree.
+func checkOneDataset(ctx context.Context, w io.Writer, res *Result, ds Dataset, policy string, store *lockStore, now time.Time) int {
 	sources := ds.GetSources()
 
 	// Compute the current remote fingerprint, trying each source in order until one succeeds
-	fp, err := sourceAttempt(w, ds.ID, sources, fingerprintAttempt(ctx))
+	fp, err := sourceAttempt(w, res, ds.ID, sources, fingerprintAttempt(ctx))
 	if err != nil {
+		var msg string
 		if len(sources) > 1 {
-			fmt.Fprintf(w, "[ERR ] %s: all %d sources failed, last error: %v\n", ds.ID, len(sources), err)
+			msg = fmt.Sprintf("all %d sources failed, last error: %v", len(sources), err)
 		} else {
-			fmt.Fprintf(w, "[ERR ] %s: fingerprint: %v\n", ds.ID, err)
+			msg = fmt.Sprintf("fingerprint: %v", err)
+		}
+		fmt.Fprintf(w, "%s %s: %s\n", colorize(ansiRed, "[ERR ]"), ds.ID, msg)
+		if res != nil {
+			res.Status = StatusError
+			res.Message = msg
 		}
 		return 1
 	}
 
 	// Get the lock entry for this dataset (may be nil if this is the first run)
 	item := store.get(ds.ID)
+	lockfp := "(none)"
+	if item != nil {
+		lockfp = item.RemoteFingerprint
+	}
 
 	// Compute local hash if the target exists (file or directory)
 	localHash := ""
@@ -235,7 +285,11 @@ func checkOneDataset(ctx context.Context, w io.Writer, ds Dataset, policy string
 		if h, err := HashPath(ds.Target); err == nil {
 			localHash = h
 		} else {
-			fmt.Fprintf(w, "[ERR ] %s: local hash: %v\n", ds.ID, err)
+			msg := fmt.Sprintf("local hash: %v", err)
+			fmt.Fprintf(w, "%s %s: %s\n", colorize(ansiRed, "[ERR ]"), ds.ID, msg)
+			if res != nil {
+				res.Warnings = append(res.Warnings, msg)
+			}
 		}
 	}
 
@@ -246,20 +300,27 @@ func checkOneDataset(ctx context.Context, w io.Writer, ds Dataset, policy string
 	case "update":
 		// UPDATE policy: Automatically fetch if remote changed or local target is missing
 		if stale || !fileExists(ds.Target) {
-			fmt.Fprintf(w, "[UPD ] %s: refreshing\n", ds.ID)
+			fmt.Fprintf(w, "%s %s: refreshing\n", colorize(ansiCyan, "[UPD ]"), ds.ID)
 
 			// Fetch (and re-fingerprint) from the first source that succeeds at both steps
-			newFp, err := sourceAttempt(w, ds.ID, sources, fetchAttempt(ctx, ds.Target))
+			newFp, err := sourceAttempt(w, res, ds.ID, sources, fetchAttempt(ctx, ds.Target))
 			if err != nil {
+				var msg string
 				if len(sources) > 1 {
-					fmt.Fprintf(w, "[ERR ] %s: all %d sources failed to fetch, last error: %v\n", ds.ID, len(sources), err)
+					msg = fmt.Sprintf("all %d sources failed to fetch, last error: %v", len(sources), err)
 				} else {
-					fmt.Fprintf(w, "[ERR ] %s: fetch: %v\n", ds.ID, err)
+					msg = fmt.Sprintf("fetch: %v", err)
 				}
-				fmt.Fprintf(w, "[INFO] %s: source may be inaccessible - please verify the source configuration\n", ds.ID)
+				fmt.Fprintf(w, "%s %s: %s\n", colorize(ansiRed, "[ERR ]"), ds.ID, msg)
+				fmt.Fprintf(w, "%s %s: source may be inaccessible - please verify the source configuration\n", colorize(ansiBlue, "[INFO]"), ds.ID)
 				failed := store.ensure(ds.ID)
 				failed.InaccessibleAt = &now
 				failed.InaccessibleError = err.Error()
+				if res != nil {
+					res.Status = StatusError
+					res.Message = msg
+					res.LockFingerprint = lockfp
+				}
 				return 1
 			}
 			fp = newFp
@@ -268,48 +329,81 @@ func checkOneDataset(ctx context.Context, w io.Writer, ds Dataset, policy string
 			// Clear inaccessible status since fetch succeeded
 			h, err := HashPath(ds.Target)
 			if err != nil {
-				fmt.Fprintf(w, "[WARN] %s: local hash after fetch: %v\n", ds.ID, err)
+				msg := fmt.Sprintf("local hash after fetch: %v", err)
+				fmt.Fprintf(w, "%s %s: %s\n", colorize(ansiYellow, "[WARN]"), ds.ID, msg)
+				if res != nil {
+					res.Warnings = append(res.Warnings, msg)
+				}
 			}
 			store.set(ds.ID, &LockItem{LocalSHA256: h, RemoteFingerprint: fp, CheckedAt: &now, InaccessibleAt: nil, InaccessibleError: ""})
+			if res != nil {
+				res.Status = StatusUpdated
+				res.LockFingerprint = lockfp
+				res.RemoteFingerprint = fp
+			}
 		} else {
 			// Remote hasn't changed - just update the lock timestamps
 			updated := store.ensure(ds.ID)
 			updated.LocalSHA256 = localHash
 			updated.RemoteFingerprint = fp
 			updated.CheckedAt = &now
-			fmt.Fprintf(w, "[OK  ] %s: up-to-date\n", ds.ID)
+			fmt.Fprintf(w, "%s %s: up-to-date\n", colorize(ansiGreen, "[OK  ]"), ds.ID)
+			if res != nil {
+				res.Status = StatusOK
+				res.LockFingerprint = fp
+				res.RemoteFingerprint = fp
+			}
 		}
 		return 0
 
 	case "log":
 		// LOG policy: Report changes but don't fail or update
 		if stale {
-			lockfp := "<nil>"
-			if item != nil {
-				lockfp = item.RemoteFingerprint
+			writeFingerprintChange(w, colorize(ansiYellow, "[STALE]"), "        ", ds.ID, lockfp, fp)
+			if res != nil {
+				res.Status = StatusStale
+				res.LockFingerprint = lockfp
+				res.RemoteFingerprint = fp
 			}
-			fmt.Fprintf(w, "[STALE] %s: remote changed (lock=%q -> now=%q)\n", ds.ID, lockfp, fp)
 		} else {
-			fmt.Fprintf(w, "[OK  ] %s: up-to-date\n", ds.ID)
+			fmt.Fprintf(w, "%s %s: up-to-date\n", colorize(ansiGreen, "[OK  ]"), ds.ID)
+			if res != nil {
+				res.Status = StatusOK
+				res.LockFingerprint = fp
+				res.RemoteFingerprint = fp
+			}
 		}
 		return 0
 
 	case "fail":
 		// FAIL policy: Exit with error if remote has changed (strict mode)
 		if stale {
-			lockfp := "<nil>"
-			if item != nil {
-				lockfp = item.RemoteFingerprint
+			writeFingerprintChange(w, colorize(ansiRed, "[FAIL]"), "       ", ds.ID, lockfp, fp)
+			if res != nil {
+				res.Status = StatusFail
+				res.LockFingerprint = lockfp
+				res.RemoteFingerprint = fp
 			}
-			fmt.Fprintf(w, "[FAIL] %s: remote changed (lock=%q -> now=%q)\n", ds.ID, lockfp, fp)
 			return 1
 		}
-		fmt.Fprintf(w, "[OK  ] %s: up-to-date\n", ds.ID)
+		fmt.Fprintf(w, "%s %s: up-to-date\n", colorize(ansiGreen, "[OK  ]"), ds.ID)
+		if res != nil {
+			res.Status = StatusOK
+			res.LockFingerprint = fp
+			res.RemoteFingerprint = fp
+		}
 		return 0
 
 	default:
 		// Unknown policy - treat as "fail" with a warning
-		fmt.Fprintf(w, "[WARN] %s: unknown policy=%q (treating as 'fail')\n", ds.ID, policy)
+		msg := fmt.Sprintf("unknown policy=%q (treating as 'fail')", policy)
+		fmt.Fprintf(w, "%s %s: %s\n", colorize(ansiYellow, "[WARN]"), ds.ID, msg)
+		if res != nil {
+			res.Status = StatusWarn
+			res.Message = msg
+			res.LockFingerprint = lockfp
+			res.RemoteFingerprint = fp
+		}
 		if stale {
 			return 1
 		}
@@ -340,8 +434,7 @@ func Fetch(ctx context.Context, cfgPath, lockPath string, ids []string, concurre
 	// Load configuration file
 	cfg, err := readConfig(cfgPath)
 	if err != nil {
-		fmt.Printf("config error: %v\n", err)
-		return 2
+		return reportError("config error", err)
 	}
 
 	// Build a set of IDs to fetch (if specific IDs were requested)
@@ -353,8 +446,7 @@ func Fetch(ctx context.Context, cfgPath, lockPath string, ids []string, concurre
 	// Load lockfile (or create empty one if it doesn't exist)
 	lk, err := readLock(lockPath)
 	if err != nil {
-		fmt.Printf("lock error: %v\n", err)
-		return 2
+		return reportError("lock error", err)
 	}
 	store := &lockStore{lk: lk}
 
@@ -369,17 +461,24 @@ func Fetch(ctx context.Context, cfgPath, lockPath string, ids []string, concurre
 		selected = append(selected, ds)
 	}
 
+	// In JSON mode the text writer is discarded entirely - results[i] carries the structured
+	// outcome instead.
 	outputs := make([]string, len(selected))
+	results := make([]Result, len(selected))
 	exitCodes := make([]int, len(selected))
 	runConcurrently(len(selected), concurrency, func(i int) {
+		results[i].ID = selected[i].ID
 		var out strings.Builder
-		exitCodes[i] = fetchOneDataset(ctx, &out, selected[i], store, now)
+		w := io.Writer(&out)
+		if JSONOutput {
+			w = io.Discard
+		}
+		exitCodes[i] = fetchOneDataset(ctx, w, &results[i], selected[i], store, now)
 		outputs[i] = out.String()
 	})
 
 	exit := 0
-	for i := range outputs {
-		fmt.Print(outputs[i])
+	for i := range exitCodes {
 		if exitCodes[i] > exit {
 			exit = exitCodes[i]
 		}
@@ -388,10 +487,19 @@ func Fetch(ctx context.Context, cfgPath, lockPath string, ids []string, concurre
 	// Write updated lockfile back to disk
 	lk.Version = 1
 	lk.LastChecked = &now
-	if err := writeLock(lockPath, lk); err != nil {
-		fmt.Printf("lock write error: %v\n", err)
-		if exit == 0 {
-			exit = 1
+	lockErr := writeLock(lockPath, lk)
+	if lockErr != nil && exit == 0 {
+		exit = 1
+	}
+
+	if JSONOutput {
+		printReport(results, lockErr)
+	} else {
+		for _, out := range outputs {
+			fmt.Print(out)
+		}
+		if lockErr != nil {
+			fmt.Printf("lock write error: %v\n", lockErr)
 		}
 	}
 	return exit
@@ -399,23 +507,32 @@ func Fetch(ctx context.Context, cfgPath, lockPath string, ids []string, concurre
 
 // fetchOneDataset runs Fetch's per-dataset logic, writing progress lines to w and reading/writing
 // this dataset's LockItem through store. Returns this dataset's contribution to the exit code.
-func fetchOneDataset(ctx context.Context, w io.Writer, ds Dataset, store *lockStore, now time.Time) int {
+//
+// res is optional (nil unless the caller is building --json output); when non-nil it's populated
+// with the same outcome the text lines describe, so the two output modes never disagree.
+func fetchOneDataset(ctx context.Context, w io.Writer, res *Result, ds Dataset, store *lockStore, now time.Time) int {
 	sources := ds.GetSources()
 
-	fmt.Fprintf(w, "[FETCH] %s\n", ds.ID)
+	fmt.Fprintf(w, "%s %s\n", colorize(ansiCyan, "[FETCH]"), ds.ID)
 
 	// Fetch (and re-fingerprint) from the first source that succeeds at both steps
-	fp, err := sourceAttempt(w, ds.ID, sources, fetchAttempt(ctx, ds.Target))
+	fp, err := sourceAttempt(w, res, ds.ID, sources, fetchAttempt(ctx, ds.Target))
 	if err != nil {
+		var msg string
 		if len(sources) > 1 {
-			fmt.Fprintf(w, "[ERR ] %s: all %d sources failed, last error: %v\n", ds.ID, len(sources), err)
+			msg = fmt.Sprintf("all %d sources failed, last error: %v", len(sources), err)
 		} else {
-			fmt.Fprintf(w, "[ERR ] %s: fetch: %v\n", ds.ID, err)
+			msg = fmt.Sprintf("fetch: %v", err)
 		}
-		fmt.Fprintf(w, "[INFO] %s: source may be inaccessible - please verify the source configuration\n", ds.ID)
+		fmt.Fprintf(w, "%s %s: %s\n", colorize(ansiRed, "[ERR ]"), ds.ID, msg)
+		fmt.Fprintf(w, "%s %s: source may be inaccessible - please verify the source configuration\n", colorize(ansiBlue, "[INFO]"), ds.ID)
 		item := store.ensure(ds.ID)
 		item.InaccessibleAt = &now
 		item.InaccessibleError = err.Error()
+		if res != nil {
+			res.Status = StatusError
+			res.Message = msg
+		}
 		return 1
 	}
 
@@ -423,8 +540,16 @@ func fetchOneDataset(ctx context.Context, w io.Writer, ds Dataset, store *lockSt
 	// Clear inaccessible status since fetch succeeded
 	h, err := HashPath(ds.Target)
 	if err != nil {
-		fmt.Fprintf(w, "[WARN] %s: local hash after fetch: %v\n", ds.ID, err)
+		msg := fmt.Sprintf("local hash after fetch: %v", err)
+		fmt.Fprintf(w, "%s %s: %s\n", colorize(ansiYellow, "[WARN]"), ds.ID, msg)
+		if res != nil {
+			res.Warnings = append(res.Warnings, msg)
+		}
 	}
 	store.set(ds.ID, &LockItem{LocalSHA256: h, RemoteFingerprint: fp, CheckedAt: &now, InaccessibleAt: nil, InaccessibleError: ""})
+	if res != nil {
+		res.Status = StatusFetched
+		res.RemoteFingerprint = fp
+	}
 	return 0
 }

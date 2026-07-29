@@ -40,8 +40,8 @@ func usage() {
 	fmt.Print(`datum - verify/fetch external data by config+lock
 
 Usage:
-  datum [--config .data.yaml] [--lock .data.lock.yaml] [--timeout 5m] [--concurrency 1] check
-  datum [--config .data.yaml] [--lock .data.lock.yaml] [--timeout 5m] [--concurrency 1] fetch [ID ...]
+  datum [--config .data.yaml] [--lock .data.lock.yaml] [--timeout 5m] [--concurrency 1] [--no-color] [--json] check
+  datum [--config .data.yaml] [--lock .data.lock.yaml] [--timeout 5m] [--concurrency 1] [--no-color] [--json] fetch [ID ...]
   datum --version
 `)
 }
@@ -65,15 +65,26 @@ func run(args []string) int {
 	var timeout time.Duration
 	var concurrency int
 	var showVersion bool
+	var noColor bool
+	var jsonOutput bool
 	fs.StringVar(&cfgPath, "config", ".data.yaml", "path to config YAML")
 	fs.StringVar(&lockPath, "lock", ".data.lock.yaml", "path to lock YAML")
 	fs.DurationVar(&timeout, "timeout", 5*time.Minute, "overall timeout for the whole check/fetch run (e.g. 30s, 5m, 1h); 0 disables it")
 	fs.IntVar(&concurrency, "concurrency", 1, "number of datasets to process in parallel (default: sequential)")
 	fs.BoolVar(&showVersion, "version", false, "print the datum version and exit")
+	fs.BoolVar(&noColor, "no-color", false, "disable colored output (also honored via the NO_COLOR env var)")
+	fs.BoolVar(&jsonOutput, "json", false, "print results as a single JSON document instead of colorized text")
 
 	if err := fs.Parse(args); err != nil {
 		usage()
 		return 2
+	}
+
+	if noColor {
+		core.NoColor = true
+	}
+	if jsonOutput {
+		core.JSONOutput = true
 	}
 
 	if showVersion {

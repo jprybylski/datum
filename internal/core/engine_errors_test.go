@@ -83,7 +83,7 @@ func TestSourceAttempt_UnknownSourceType(t *testing.T) {
 
 	t.Run("single source", func(t *testing.T) {
 		var w strings.Builder
-		_, err := sourceAttempt(&w, "ds1", []registry.Source{{Type: "nonexistent-handler"}}, attempt)
+		_, err := sourceAttempt(&w, nil, "ds1", []registry.Source{{Type: "nonexistent-handler"}}, attempt)
 		if err == nil {
 			t.Fatal("expected error for unknown source type, got nil")
 		}
@@ -99,7 +99,7 @@ func TestSourceAttempt_UnknownSourceType(t *testing.T) {
 	t.Run("multiple sources prints a warn line per failure", func(t *testing.T) {
 		var w strings.Builder
 		sources := []registry.Source{{Type: "nonexistent-a"}, {Type: "nonexistent-b"}}
-		_, err := sourceAttempt(&w, "ds1", sources, attempt)
+		_, err := sourceAttempt(&w, nil, "ds1", sources, attempt)
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
@@ -119,7 +119,7 @@ func TestSourceAttempt_EmptyWarnLabel(t *testing.T) {
 	attempt := func(f registry.Fetcher, source registry.Source) (string, string, error) {
 		return "", "", errors.New("boom")
 	}
-	_, err := sourceAttempt(&w, "ds1", sources, attempt)
+	_, err := sourceAttempt(&w, nil, "ds1", sources, attempt)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -174,7 +174,7 @@ func TestCheckOneDataset_LocalHashError(t *testing.T) {
 	store := &lockStore{lk: &Lock{Items: map[string]*LockItem{}}}
 	var w strings.Builder
 
-	code := checkOneDataset(context.Background(), &w, ds, "log", store, time.Now().UTC())
+	code := checkOneDataset(context.Background(), &w, nil, ds, "log", store, time.Now().UTC())
 	if code != 0 {
 		t.Errorf("checkOneDataset() = %d, want 0 (log policy doesn't fail on local hash error)", code)
 	}
@@ -196,7 +196,7 @@ func TestCheckOneDataset_UpdatePolicy_AllSourcesFailToFetch(t *testing.T) {
 	var w strings.Builder
 	now := time.Now().UTC()
 
-	code := checkOneDataset(context.Background(), &w, ds, "update", store, now)
+	code := checkOneDataset(context.Background(), &w, nil, ds, "update", store, now)
 	if code != 1 {
 		t.Errorf("checkOneDataset() = %d, want 1", code)
 	}
@@ -216,7 +216,7 @@ func TestCheckOneDataset_UpdatePolicy_LocalHashErrorAfterFetch(t *testing.T) {
 	store := &lockStore{lk: &Lock{Items: map[string]*LockItem{}}}
 	var w strings.Builder
 
-	code := checkOneDataset(context.Background(), &w, ds, "update", store, time.Now().UTC())
+	code := checkOneDataset(context.Background(), &w, nil, ds, "update", store, time.Now().UTC())
 	if code != 0 {
 		t.Errorf("checkOneDataset() = %d, want 0 (fetch succeeded even though hashing failed after)", code)
 	}
@@ -233,7 +233,7 @@ func TestCheckOneDataset_LogPolicy_NotStale(t *testing.T) {
 	}}}
 	var w strings.Builder
 
-	code := checkOneDataset(context.Background(), &w, ds, "log", store, time.Now().UTC())
+	code := checkOneDataset(context.Background(), &w, nil, ds, "log", store, time.Now().UTC())
 	if code != 0 {
 		t.Errorf("checkOneDataset() = %d, want 0", code)
 	}
@@ -249,7 +249,7 @@ func TestCheckOneDataset_FailPolicy_NotStale(t *testing.T) {
 	}}}
 	var w strings.Builder
 
-	code := checkOneDataset(context.Background(), &w, ds, "fail", store, time.Now().UTC())
+	code := checkOneDataset(context.Background(), &w, nil, ds, "fail", store, time.Now().UTC())
 	if code != 0 {
 		t.Errorf("checkOneDataset() = %d, want 0", code)
 	}
@@ -264,7 +264,7 @@ func TestCheckOneDataset_UnknownPolicy(t *testing.T) {
 		store := &lockStore{lk: &Lock{Items: map[string]*LockItem{}}}
 		var w strings.Builder
 
-		code := checkOneDataset(context.Background(), &w, ds, "bogus-policy", store, time.Now().UTC())
+		code := checkOneDataset(context.Background(), &w, nil, ds, "bogus-policy", store, time.Now().UTC())
 		if code != 1 {
 			t.Errorf("checkOneDataset() = %d, want 1 (unknown policy treated as fail when stale)", code)
 		}
@@ -280,7 +280,7 @@ func TestCheckOneDataset_UnknownPolicy(t *testing.T) {
 		}}}
 		var w strings.Builder
 
-		code := checkOneDataset(context.Background(), &w, ds, "bogus-policy", store, time.Now().UTC())
+		code := checkOneDataset(context.Background(), &w, nil, ds, "bogus-policy", store, time.Now().UTC())
 		if code != 0 {
 			t.Errorf("checkOneDataset() = %d, want 0 (unknown policy, but not stale)", code)
 		}
@@ -388,7 +388,7 @@ func TestFetchOneDataset_LocalHashErrorAfterFetch(t *testing.T) {
 	store := &lockStore{lk: &Lock{Items: map[string]*LockItem{}}}
 	var w strings.Builder
 
-	code := fetchOneDataset(context.Background(), &w, ds, store, time.Now().UTC())
+	code := fetchOneDataset(context.Background(), &w, nil, ds, store, time.Now().UTC())
 	if code != 0 {
 		t.Errorf("fetchOneDataset() = %d, want 0 (fetch succeeded even though hashing failed after)", code)
 	}
