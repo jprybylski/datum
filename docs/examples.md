@@ -116,6 +116,13 @@ datum fetch
 datum check
 ```
 
+<details markdown="1">
+<summary>▶ Watch a live run</summary>
+
+<img src="{{ '/assets/img/file-copy.gif' | relative_url }}" alt="Terminal recording of datum fetch copying a local file, then the source file changing and datum check silently re-copying it under the update policy" width="600" loading="lazy">
+
+</details>
+
 ## Example 4: Command Handler - System Information
 
 From [`examples/command-system/.data.yaml`](https://github.com/jprybylski/datum/blob/main/examples/command-system/.data.yaml):
@@ -146,6 +153,13 @@ cd examples/command-system
 datum fetch
 datum check
 ```
+
+<details markdown="1">
+<summary>▶ Watch a live run</summary>
+
+<img src="{{ '/assets/img/command-system.gif' | relative_url }}" alt="Terminal recording of datum fetch running a shell command to capture system information, then datum check confirming it's up to date" width="600" loading="lazy">
+
+</details>
 
 ## Example 5: Multi-Source with Fallback
 
@@ -187,6 +201,20 @@ cd examples/multi-source
 datum fetch
 datum check
 ```
+
+<details markdown="1">
+<summary>▶ Watch a live run</summary>
+
+This recording uses a scratch config with an unreachable HTTP source (a closed local port) and a
+local file fallback, rather than `examples/multi-source` itself, whose `.data.yaml` uses
+illustrative but unreachable mirror URLs (`example.com`, `mirror1-3.example.com`) - fine to read
+as sample config, but not something a recording can run against deterministically. The behavior
+shown is the same: `datum fetch` logs a `[WARN]` for the failed source and falls back to the
+second one.
+
+<img src="{{ '/assets/img/multi-source.gif' | relative_url }}" alt="Terminal recording of datum fetch failing over from an unreachable HTTP source to a local file fallback, then datum check confirming it's up to date" width="600" loading="lazy">
+
+</details>
 
 ## Example 6: Multiple Datasets with Different Policies
 
