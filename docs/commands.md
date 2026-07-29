@@ -6,7 +6,7 @@ nav_order: 4
 
 # Commands
 
-Both commands accept four flags:
+Both commands accept these flags:
 
 - `--config` (default `.data.yaml`) - path to the config file. Only needed if yours isn't named
   the default.
@@ -21,12 +21,21 @@ Both commands accept four flags:
   Output is always printed back in the order datasets appear in `.data.yaml`, regardless of which
   one finishes first, so logs read the same way at any concurrency level. Values below `1` are
   treated as `1`.
+- `--no-color` - disable colorized status tags (`[OK  ]`, `[FAIL]`, etc.). Color is already
+  suppressed automatically when stdout isn't a terminal (e.g. piped output or CI logs), or when
+  the `NO_COLOR` environment variable is set to any non-empty value.
+- `--json` - print a single JSON document (`{"results": [...]}`, one object per dataset with its
+  `id`, `status`, fingerprints, and any warnings) instead of colorized text, for scripts and other
+  programmatic consumers. Exit codes are unchanged.
 
 ```bash
 datum --timeout 2m --concurrency 4 check
 
 # Only needed when the config/lock files aren't named the defaults:
 datum --config other.yaml --lock other.lock.yaml check
+
+# Machine-readable output for scripting:
+datum --json check
 ```
 
 ## `datum check`
