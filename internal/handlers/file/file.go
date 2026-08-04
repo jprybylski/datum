@@ -2,22 +2,17 @@ package file
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/jprybylski/datum/internal/core"
 	"github.com/jprybylski/datum/internal/registry"
 )
-
-// manifestSuffix names the sidecar file (a sibling of the target directory, not inside it) that
-// directory-mode Fetch uses to remember which relative paths it wrote on the previous run. That's
-// how it knows which target files to remove when a file disappears from the source, without
-// touching anything else in the target directory that this dataset didn't write itself.
-const manifestSuffix = ".datum-manifest.json"
 
 type handler struct{}
 
@@ -49,20 +44,31 @@ func (h *handler) Fingerprint(ctx context.Context, src registry.Source) (string,
 	return "sha256:" + hh, nil
 }
 
-// Fetch copies src.Path to dest. If src.Path is a directory, its entire contents are recreated
-// under dest (see fetchDir); otherwise it's a single-file copy.
+// Fetch copies src.Path to dest, satisfying the base registry.Fetcher interface. It's a thin
+// wrapper around FetchDir with no previous-run state and no other dataset's claimed paths, so a
+// directory source gets a fresh copy but not the cross-run cleanup or cross-dataset conflict
+// checking that come from threading that state through - callers that need those (the engine)
+// call FetchDir directly with state it tracks in the lockfile (see registry.DirManifestFetcher).
 func (h *handler) Fetch(ctx context.Context, src registry.Source, dest string) error {
+	_, err := h.FetchDir(ctx, src, dest, nil, nil)
+	return err
+}
+
+// FetchDir implements registry.DirManifestFetcher. If src.Path is a single file, it behaves like
+// Fetch and returns a nil manifest. If it's a directory, its entire contents are recreated under
+// dest (see fetchDir), and the relative paths written are returned as the manifest.
+func (h *handler) FetchDir(ctx context.Context, src registry.Source, dest string, prevManifest []string, claimed map[string]bool) ([]string, error) {
 	if src.Path == "" {
-		return errors.New("file: missing source.path")
+		return nil, errors.New("file: missing source.path")
 	}
 	info, err := os.Stat(src.Path)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if info.IsDir() {
-		return fetchDir(src.Path, dest)
+		return fetchDir(src.Path, dest, prevManifest, claimed)
 	}
-	return fetchFile(src.Path, dest)
+	return nil, fetchFile(src.Path, dest)
 }
 
 func fetchFile(srcPath, dest string) error {
@@ -91,70 +97,88 @@ func fetchFile(srcPath, dest string) error {
 	return os.Rename(tmp, dest)
 }
 
-// fetchDir recreates every file from srcDir under destDir, preserving relative paths, and
-// removes any file from destDir that this dataset wrote on a previous fetch but that no longer
-// exists in srcDir - so files deleted upstream don't linger in the target. Files in destDir that
-// this dataset never wrote (tracked via the sidecar manifest) are left untouched, since destDir
-// isn't assumed to hold only this dataset's contents.
+// fetchDir recreates every file from srcDir under destDir, preserving relative paths, and returns
+// the sorted list of relative paths it wrote. The caller (the engine) persists that as this
+// dataset's manifest - in the lockfile, not a sidecar file on disk - and passes it back in as
+// prevManifest on the next call, so cleanup only ever removes files this dataset itself wrote and
+// no longer writes now. Files in destDir this dataset never wrote (not in prevManifest) are left
+// untouched, since destDir isn't assumed to hold only this dataset's contents.
+//
+// More than one dataset can target the same destDir. prevManifest and the returned manifest are
+// always just this one dataset's own paths, so its cleanup never touches another dataset's files.
+// claimed lists relative paths already owned there by other datasets (as of their own last
+// fetch); if any path this fetch would write appears in claimed, that's a naming conflict between
+// two datasets sharing a target, and the fetch fails instead of silently overwriting (or being
+// overwritten by) the other dataset's file. Nothing is written when a conflict is detected.
 //
 // This isn't a whole-tree atomic operation - files are copied and removed one at a time, same as
 // the rest of datum's per-file atomicity (tmp file + rename). A crash partway through can leave
 // destDir in a partially-updated state; re-running Fetch will finish the job.
-func fetchDir(srcDir, destDir string) error {
+func fetchDir(srcDir, destDir string, prevManifest []string, claimed map[string]bool) ([]string, error) {
 	rels, err := core.DirManifest(srcDir)
 	if err != nil {
-		return err
+		return nil, err
+	}
+
+	if conflicts := conflictingPaths(rels, claimed); len(conflicts) > 0 {
+		return nil, fmt.Errorf("file: path(s) already synced here by another dataset: %s", strings.Join(conflicts, ", "))
 	}
 
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
-		return err
+		return nil, err
 	}
 
 	for _, rel := range rels {
 		if err := fetchFile(filepath.Join(srcDir, rel), filepath.Join(destDir, rel)); err != nil {
-			return fmt.Errorf("file: copying %q: %w", rel, err)
+			return nil, fmt.Errorf("file: copying %q: %w", rel, err)
 		}
 	}
 
-	manifestPath := destDir + manifestSuffix
-	// A missing or corrupt manifest just means there's no prior state to diff against (e.g.
-	// first fetch), not a fetch failure - nothing to delete yet.
-	prevRels, _ := readManifest(manifestPath)
 	newSet := make(map[string]bool, len(rels))
 	for _, r := range rels {
 		newSet[r] = true
 	}
-	for _, prev := range prevRels {
+	for _, prev := range prevManifest {
 		if !newSet[prev] {
-			_ = os.Remove(filepath.Join(destDir, prev)) // best-effort: file was removed upstream
+			// best-effort: file was removed upstream
+			_ = os.Remove(filepath.Join(destDir, prev))
+			removeEmptyParents(destDir, filepath.Dir(prev))
 		}
 	}
 
-	return writeManifest(manifestPath, rels)
-}
-
-func readManifest(path string) ([]string, error) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var rels []string
-	if err := json.Unmarshal(b, &rels); err != nil {
-		return nil, err
-	}
 	return rels, nil
 }
 
-func writeManifest(path string, rels []string) error {
-	b, err := json.Marshal(rels)
-	if err != nil {
-		return err
+// conflictingPaths returns, sorted, every path in rels that's also in claimed - relative paths a
+// different dataset already wrote to this same destDir. Two datasets writing disjoint relative
+// paths into the same destDir is fine; two datasets both writing the same relative path is
+// flagged instead of letting one silently clobber the other.
+func conflictingPaths(rels []string, claimed map[string]bool) []string {
+	var conflicts []string
+	for _, r := range rels {
+		if claimed[r] {
+			conflicts = append(conflicts, r)
+		}
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
-		return err
+	sort.Strings(conflicts)
+	return conflicts
+}
+
+// removeEmptyParents walks upward from filepath.Join(root, dir), removing directories left empty
+// by a file deletion, and stops at the first non-empty directory or at root itself (root is never
+// removed, since it's the target directory the dataset owns, not a byproduct of it).
+func removeEmptyParents(root, dir string) {
+	for dir != "." && dir != string(filepath.Separator) {
+		full := filepath.Join(root, dir)
+		entries, err := os.ReadDir(full)
+		if err != nil || len(entries) > 0 {
+			return
+		}
+		if err := os.Remove(full); err != nil {
+			return
+		}
+		dir = filepath.Dir(dir)
 	}
-	return os.Rename(tmp, path)
 }
 
 func init() {

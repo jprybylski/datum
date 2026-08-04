@@ -60,9 +60,17 @@ target: data/dataset/
   content, so any addition, removal, rename, or edit anywhere in the tree changes it.
 - If a file disappears from the source between fetches, it's removed from `target` too - but
   only files this dataset previously wrote. Anything else already living in `target` is left
-  alone, since `target` isn't assumed to hold only this dataset's contents. This is tracked via a
-  small sidecar manifest at `<target>.datum-manifest.json` (a sibling of `target`, not inside
-  it) - don't delete it by hand, or the next fetch won't know what it's allowed to clean up.
+  alone, since `target` isn't assumed to hold only this dataset's contents. datum tracks which
+  relative paths each dataset wrote in the lockfile (`dir_paths` on that dataset's entry) rather
+  than a sidecar file next to `target` - don't hand-edit that field, or the next fetch won't know
+  what it's allowed to clean up.
+- More than one dataset can target the same directory - useful for merging several sources into
+  one place. They can even have same-named subdirectories, as long as the datasets don't write
+  the same relative path within `target`; if two datasets do claim the same relative path, the
+  second one to fetch fails with an error instead of silently overwriting the first one's file.
+  Sharing a target this way is only safe when those datasets are fetched at `--concurrency 1`
+  (the default) - conflict detection isn't guaranteed to catch the case where two datasets
+  sharing a target are fetched fully in parallel.
 - Directory sync isn't a single atomic operation; files are copied/removed one at a time. A
   crash mid-fetch can leave `target` partially updated - re-running `fetch` finishes the job.
 

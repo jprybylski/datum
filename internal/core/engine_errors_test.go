@@ -136,7 +136,7 @@ func TestFetchAttempt_FetchSucceedsFingerprintFails(t *testing.T) {
 		t.Fatal("mockfpfail handler not registered")
 	}
 	dest := filepath.Join(t.TempDir(), "target.txt")
-	attempt := fetchAttempt(context.Background(), dest)
+	attempt := fetchAttempt(context.Background(), dest, nil, nil)
 
 	value, warnLabel, err := attempt(f, registry.Source{Type: "mockfpfail"})
 	if err == nil {
@@ -145,8 +145,8 @@ func TestFetchAttempt_FetchSucceedsFingerprintFails(t *testing.T) {
 	if warnLabel != "fingerprint after fetch" {
 		t.Errorf("warnLabel = %q, want %q", warnLabel, "fingerprint after fetch")
 	}
-	if value != "" {
-		t.Errorf("value = %q, want empty string on failure", value)
+	if value.fp != "" {
+		t.Errorf("value.fp = %q, want empty string on failure", value.fp)
 	}
 	// The fetch itself did succeed, so the file should exist even though the overall attempt
 	// is reported as failed (matching fetchAttempt's "only counts as succeeded if both steps
@@ -175,7 +175,7 @@ func TestCheckOneDataset_LocalHashError(t *testing.T) {
 	var w strings.Builder
 	res := &Result{}
 
-	code := checkOneDataset(context.Background(), &w, res, ds, "log", store, time.Now().UTC())
+	code := checkOneDataset(context.Background(), &w, res, ds, "log", store, time.Now().UTC(), nil)
 	if code != 0 {
 		t.Errorf("checkOneDataset() = %d, want 0 (log policy doesn't fail on local hash error)", code)
 	}
@@ -200,7 +200,7 @@ func TestCheckOneDataset_UpdatePolicy_AllSourcesFailToFetch(t *testing.T) {
 	var w strings.Builder
 	now := time.Now().UTC()
 
-	code := checkOneDataset(context.Background(), &w, nil, ds, "update", store, now)
+	code := checkOneDataset(context.Background(), &w, nil, ds, "update", store, now, nil)
 	if code != 1 {
 		t.Errorf("checkOneDataset() = %d, want 1", code)
 	}
@@ -221,7 +221,7 @@ func TestCheckOneDataset_UpdatePolicy_LocalHashErrorAfterFetch(t *testing.T) {
 	var w strings.Builder
 	res := &Result{}
 
-	code := checkOneDataset(context.Background(), &w, res, ds, "update", store, time.Now().UTC())
+	code := checkOneDataset(context.Background(), &w, res, ds, "update", store, time.Now().UTC(), nil)
 	if code != 0 {
 		t.Errorf("checkOneDataset() = %d, want 0 (fetch succeeded even though hashing failed after)", code)
 	}
@@ -245,7 +245,7 @@ func TestCheckOneDataset_LogPolicy_NotStale(t *testing.T) {
 	var w strings.Builder
 	res := &Result{}
 
-	code := checkOneDataset(context.Background(), &w, res, ds, "log", store, time.Now().UTC())
+	code := checkOneDataset(context.Background(), &w, res, ds, "log", store, time.Now().UTC(), nil)
 	if code != 0 {
 		t.Errorf("checkOneDataset() = %d, want 0", code)
 	}
@@ -264,7 +264,7 @@ func TestCheckOneDataset_FailPolicy_NotStale(t *testing.T) {
 	}}}
 	var w strings.Builder
 
-	code := checkOneDataset(context.Background(), &w, nil, ds, "fail", store, time.Now().UTC())
+	code := checkOneDataset(context.Background(), &w, nil, ds, "fail", store, time.Now().UTC(), nil)
 	if code != 0 {
 		t.Errorf("checkOneDataset() = %d, want 0", code)
 	}
@@ -280,7 +280,7 @@ func TestCheckOneDataset_UnknownPolicy(t *testing.T) {
 		var w strings.Builder
 		res := &Result{}
 
-		code := checkOneDataset(context.Background(), &w, res, ds, "bogus-policy", store, time.Now().UTC())
+		code := checkOneDataset(context.Background(), &w, res, ds, "bogus-policy", store, time.Now().UTC(), nil)
 		if code != 1 {
 			t.Errorf("checkOneDataset() = %d, want 1 (unknown policy treated as fail when stale)", code)
 		}
@@ -299,7 +299,7 @@ func TestCheckOneDataset_UnknownPolicy(t *testing.T) {
 		}}}
 		var w strings.Builder
 
-		code := checkOneDataset(context.Background(), &w, nil, ds, "bogus-policy", store, time.Now().UTC())
+		code := checkOneDataset(context.Background(), &w, nil, ds, "bogus-policy", store, time.Now().UTC(), nil)
 		if code != 0 {
 			t.Errorf("checkOneDataset() = %d, want 0 (unknown policy, but not stale)", code)
 		}
@@ -408,7 +408,7 @@ func TestFetchOneDataset_LocalHashErrorAfterFetch(t *testing.T) {
 	var w strings.Builder
 	res := &Result{}
 
-	code := fetchOneDataset(context.Background(), &w, res, ds, store, time.Now().UTC())
+	code := fetchOneDataset(context.Background(), &w, res, ds, store, time.Now().UTC(), nil)
 	if code != 0 {
 		t.Errorf("fetchOneDataset() = %d, want 0 (fetch succeeded even though hashing failed after)", code)
 	}

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Multiple datasets can now target the same directory with the file handler's directory sync:
+  previously, a second dataset fetching into a shared target directory would wipe out files the
+  first dataset had written, because cleanup tracked "files written to this directory" instead of
+  "files written by this dataset" (#14).
+- If two datasets sharing a target directory try to write the same relative path, `fetch` now
+  fails with an explicit error naming the conflicting path(s) instead of one dataset silently
+  overwriting the other's file. Datasets with same-named but non-conflicting subdirectories (e.g.
+  both containing `dir1/`) merge into the shared target without issue (#15).
+- Directory sync no longer leaves behind empty subdirectories after every file under them is
+  removed (e.g. deleted upstream, or reassigned to a different relative path) - the now-empty
+  directory is removed too, walking up until a non-empty directory or the target itself (#16).
+- Directory sync no longer writes a `<target>.datum-manifest.json` sidecar file next to the
+  target. That per-dataset tracking state (which relative paths a dataset last wrote) now lives in
+  the lockfile as `dir_paths` on the dataset's entry, alongside the rest of its tracked state (#18).
+
+### Note
+- Sharing a target directory between datasets relies on a read-then-fetch conflict check and
+  isn't safe under full concurrency: datasets that share a target should be fetched at
+  `--concurrency 1` (the default) for the conflict check to be reliable.
+
 ## [1.2.1] - 2026-07-28
 
 ### Added
