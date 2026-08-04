@@ -17,6 +17,75 @@ func TestUnlock_NoIDs(t *testing.T) {
 	}
 }
 
+func TestUnlock_LockReadError(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, ".data.yaml")
+	lockPath := filepath.Join(tmpDir, "bad.lock.yaml")
+	mustWriteFile(t, configPath, []byte("version: 1\ndatasets: []\n"))
+	mustWriteFile(t, lockPath, []byte("bad: yaml: syntax:"))
+
+	var out bytes.Buffer
+	code := Unlock(configPath, lockPath, []string{"ds1"}, true, nil, &out)
+	if code != 2 {
+		t.Errorf("Unlock() with invalid lock = %d, want 2", code)
+	}
+	if !strings.Contains(out.String(), "lock error") {
+		t.Errorf("output = %q, want it to mention a lock error", out.String())
+	}
+}
+
+func TestUnlock_ConfirmationReadError(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, ".data.yaml")
+	lockPath := filepath.Join(tmpDir, ".data.lock.yaml")
+	mustWriteFile(t, configPath, []byte("version: 1\ndatasets: []\n"))
+	mustWriteFile(t, lockPath, []byte(`version: 1
+items:
+  ds1:
+    remote_fingerprint: mock-fp
+`))
+
+	var out bytes.Buffer
+	code := Unlock(configPath, lockPath, []string{"ds1"}, false, errorReader{}, &out)
+	if code != 1 {
+		t.Errorf("Unlock() with a failing confirmation reader = %d, want 1", code)
+	}
+	if !strings.Contains(out.String(), "reading confirmation") {
+		t.Errorf("output = %q, want it to mention the read error", out.String())
+	}
+
+	lk, err := readLock(lockPath)
+	if err != nil {
+		t.Fatalf("readLock() error = %v", err)
+	}
+	if _, ok := lk.Items["ds1"]; !ok {
+		t.Error("ds1 should survive a failed confirmation read")
+	}
+}
+
+func TestUnlock_MultipleIDsConfirmationPluralizesCorrectly(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, ".data.yaml")
+	lockPath := filepath.Join(tmpDir, ".data.lock.yaml")
+	mustWriteFile(t, configPath, []byte("version: 1\ndatasets: []\n"))
+	mustWriteFile(t, lockPath, []byte(`version: 1
+items:
+  ds1:
+    remote_fingerprint: mock-fp-1
+  ds2:
+    remote_fingerprint: mock-fp-2
+`))
+
+	var out bytes.Buffer
+	code := Unlock(configPath, lockPath, []string{"ds1", "ds2"}, false, strings.NewReader("y\n"), &out)
+	if code != 0 {
+		t.Fatalf("Unlock() = %d, want 0; output: %s", code, out.String())
+	}
+	if !strings.Contains(out.String(), "Unlock 2 entries?") {
+		t.Errorf("output = %q, want the plural prompt for 2 entries", out.String())
+	}
+}
+
 func TestUnlock_NotFound(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, ".data.yaml")

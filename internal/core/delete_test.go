@@ -3,11 +3,19 @@ package core
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// errorReader is an io.Reader that always fails, for exercising the "reading confirmation" error
+// branch in Delete/Unlock - distinct from a declined ("n") answer or a closed stdin (io.EOF, which
+// is treated as a decline).
+type errorReader struct{}
+
+func (errorReader) Read(p []byte) (int, error) { return 0, errors.New("simulated read error") }
 
 // deleteConfig writes a minimal one-dataset config using the "mock" handler (registered in
 // engine_test.go) targeting targetFile, and returns the config path.
@@ -132,6 +140,74 @@ func TestDelete_ConfirmationAccepted(t *testing.T) {
 	}
 	if _, err := os.Stat(targetFile); !os.IsNotExist(err) {
 		t.Errorf("target file should have been removed, stat err = %v", err)
+	}
+}
+
+func TestDelete_ConfirmationReadError(t *testing.T) {
+	tmpDir := t.TempDir()
+	targetFile := filepath.Join(tmpDir, "target.txt")
+	configPath := deleteConfig(t, tmpDir, "ds1", targetFile)
+	lockPath := filepath.Join(tmpDir, ".data.lock.yaml")
+	mustWriteFile(t, targetFile, []byte("data"))
+
+	var out bytes.Buffer
+	code := Delete(configPath, lockPath, []string{"ds1"}, false, errorReader{}, &out)
+	if code != 1 {
+		t.Errorf("Delete() with a failing confirmation reader = %d, want 1", code)
+	}
+	if !strings.Contains(out.String(), "reading confirmation") {
+		t.Errorf("output = %q, want it to mention the read error", out.String())
+	}
+	if _, err := os.Stat(targetFile); err != nil {
+		t.Errorf("target file should survive a failed confirmation read: %v", err)
+	}
+}
+
+func TestDelete_NeverFetchedTargetIsNoOp(t *testing.T) {
+	tmpDir := t.TempDir()
+	targetFile := filepath.Join(tmpDir, "target.txt")
+	configPath := deleteConfig(t, tmpDir, "ds1", targetFile)
+	lockPath := filepath.Join(tmpDir, ".data.lock.yaml")
+	// No lockfile and no target file at all - as if `datum fetch` was never run for this dataset.
+
+	var out bytes.Buffer
+	code := Delete(configPath, lockPath, []string{"ds1"}, true, nil, &out)
+	if code != 0 {
+		t.Fatalf("Delete() on a never-fetched dataset = %d, want 0; output: %s", code, out.String())
+	}
+
+	lk, err := readLock(lockPath)
+	if err != nil {
+		t.Fatalf("readLock() error = %v", err)
+	}
+	if item := lk.Items["ds1"]; item == nil || !item.Deleted {
+		t.Errorf("lock item = %+v, want Deleted=true even though there was nothing on disk", item)
+	}
+}
+
+func TestDelete_FileRemovalError(t *testing.T) {
+	skipUnlessCanDenyRead(t)
+	tmpDir := t.TempDir()
+	readOnlyDir := filepath.Join(tmpDir, "readonly")
+	if err := os.MkdirAll(readOnlyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	targetFile := filepath.Join(readOnlyDir, "target.txt")
+	configPath := deleteConfig(t, tmpDir, "ds1", targetFile)
+	lockPath := filepath.Join(tmpDir, ".data.lock.yaml")
+	mustWriteFile(t, targetFile, []byte("data"))
+	if err := os.Chmod(readOnlyDir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	defer chmodOrLog(t, readOnlyDir, 0o755)
+
+	var out bytes.Buffer
+	code := Delete(configPath, lockPath, []string{"ds1"}, true, nil, &out)
+	if code != 1 {
+		t.Errorf("Delete() with an unremovable target = %d, want 1; output: %s", code, out.String())
+	}
+	if !strings.Contains(out.String(), "[ERR ]") {
+		t.Errorf("output = %q, want an [ERR ] line", out.String())
 	}
 }
 

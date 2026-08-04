@@ -168,6 +168,65 @@ datasets:
 	}
 }
 
+// TestDelete_DirectorySource_EmptyParentRemovalFails covers removeEmptyParents' own error path:
+// when a now-empty subdirectory can't be removed (its *parent* made read-only, so the rmdir itself
+// is denied - distinct from TestDelete_DirectorySource_RemovalError, which denies removing the
+// file), the empty directory is silently left behind rather than failing the whole delete - Delete
+// still succeeds and still removes the file itself.
+func TestDelete_DirectorySource_EmptyParentRemovalFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission bits don't apply the same way on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("running as root bypasses file permission checks")
+	}
+
+	tmpDir := t.TempDir()
+	srcDir := filepath.Join(tmpDir, "src")
+	mustWriteFile(t, filepath.Join(srcDir, "sub1", "sub2", "a.txt"), "aaa")
+
+	targetDir := filepath.Join(tmpDir, "target")
+	configPath := filepath.Join(tmpDir, ".data.yaml")
+	configContent := `version: 1
+datasets:
+  - id: dir_dataset
+    source:
+      type: file
+      path: ` + srcDir + `
+    target: ` + targetDir + `
+`
+	mustWriteFile(t, configPath, configContent)
+	lockPath := filepath.Join(tmpDir, ".data.lock.yaml")
+
+	if code := core.Fetch(context.Background(), configPath, lockPath, nil, 1); code != 0 {
+		t.Fatalf("Fetch() = %d, want 0", code)
+	}
+
+	// Deny write on sub1 so rmdir-ing the now-empty sub2 (removeEmptyParents' job) fails, even
+	// though removing a.txt itself (which only needs write on sub2, untouched here) still works.
+	sub1 := filepath.Join(targetDir, "sub1")
+	if err := os.Chmod(sub1, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := os.Chmod(sub1, 0o755); err != nil {
+			t.Logf("cleanup: failed to chmod %s: %v", sub1, err)
+		}
+	}()
+
+	var out bytes.Buffer
+	code := core.Delete(configPath, lockPath, []string{"dir_dataset"}, true, nil, &out)
+	if code != 0 {
+		t.Fatalf("Delete() = %d, want 0 (file removal itself should still succeed); output: %s", code, out.String())
+	}
+	if _, err := os.Stat(filepath.Join(sub1, "sub2", "a.txt")); !os.IsNotExist(err) {
+		t.Errorf("a.txt should have been removed, stat err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(sub1, "sub2")); err != nil {
+		t.Errorf("sub2 should survive (its removal was denied), but got stat err = %v", err)
+	}
+}
+
 // discard implements io.Writer, silently dropping Delete's progress/confirmation output for tests
 // that only care about the resulting filesystem/lockfile state.
 type discard struct{}

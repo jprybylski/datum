@@ -102,6 +102,36 @@ datasets:
 	return configPath, lockPath
 }
 
+func TestAudit_DeletedAndOrphanedEntry(t *testing.T) {
+	configPath, lockPath := auditFixture(t)
+
+	// ds_deleted is deleted but still in the config from auditFixture; drop it from the config
+	// too, so it becomes both deleted and orphaned in the same audit run.
+	tmpDir := filepath.Dir(configPath)
+	mustWriteFile(t, configPath, []byte(`version: 1
+defaults:
+  policy: update
+datasets:
+  - id: ds_ok
+    source:
+      type: mock
+    target: `+filepath.Join(tmpDir, "ok.txt")+`
+`))
+
+	out := captureStdout(t, func() {
+		if code := Audit(configPath, lockPath); code != 0 {
+			t.Errorf("Audit() = %d, want 0", code)
+		}
+	})
+
+	if !strings.Contains(out, "[DEL ] ds_deleted") {
+		t.Errorf("output missing ds_deleted entry\nfull output:\n%s", out)
+	}
+	if !strings.Contains(out, "not in .data.yaml") {
+		t.Errorf("output = %q, want a deleted+orphaned entry to note it's not in .data.yaml", out)
+	}
+}
+
 func TestAudit_TextOutput(t *testing.T) {
 	configPath, lockPath := auditFixture(t)
 
