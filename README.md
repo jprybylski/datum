@@ -168,10 +168,10 @@ a JSON Schema (`data-schema.json`) for IDE autocomplete/validation. See
 
 ## Commands
 
-Both commands accept `--config` (default `.data.yaml`), `--lock` (default `.data.lock.yaml`),
-`--timeout` (default `5m`, bounds the whole run), and `--concurrency` (default `1`, sequential;
-processes datasets in parallel above that). You only need to pass `--config`/`--lock` if your
-files aren't named the defaults.
+datum has six subcommands: `check`, `fetch`, `delete`, `undelete`, `unlock`, and `audit`. All
+accept `--config`/`--lock` (only needed if yours aren't named the defaults); `check`/`fetch` also
+take `--timeout` (default `5m`, bounds the whole run) and `--concurrency` (default `1`,
+sequential). Every flag goes *before* the subcommand.
 
 ```bash
 # Verify all datasets against their recorded fingerprints

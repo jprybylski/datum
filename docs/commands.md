@@ -6,12 +6,16 @@ nav_order: 4
 
 # Commands
 
-Both commands accept these flags:
+datum has six subcommands: `check`, `fetch`, `delete`, `undelete`, `unlock`, and `audit`. All of
+them accept `--config` (default `.data.yaml`) and `--lock` (default `.data.lock.yaml`) - only
+needed if yours aren't named the defaults - with one exception: `undelete` only ever touches the
+lockfile, so it doesn't take `--config` at all.
 
-- `--config` (default `.data.yaml`) - path to the config file. Only needed if yours isn't named
-  the default.
-- `--lock` (default `.data.lock.yaml`) - path to the lockfile. Same deal - only needed for a
-  non-default name.
+Every flag goes *before* the subcommand (`datum --json check`, not `datum check --json`) - that's
+a `flag`-package rule, not a datum-specific one, but it trips people up.
+
+`check` and `fetch` additionally accept:
+
 - `--timeout` (default `5m`) - overall deadline for the whole run, covering every dataset's
   handler operations (HTTP requests, git fetches, shell commands). A hung source can't block the
   process forever; when it fires, in-flight datasets fail with a `context deadline exceeded`
@@ -21,12 +25,20 @@ Both commands accept these flags:
   Output is always printed back in the order datasets appear in `.data.yaml`, regardless of which
   one finishes first, so logs read the same way at any concurrency level. Values below `1` are
   treated as `1`.
+
+`check`, `fetch`, and `audit` additionally accept:
+
 - `--no-color` - disable colorized status tags (`[OK  ]`, `[FAIL]`, etc.). Color is already
   suppressed automatically when stdout isn't a terminal (e.g. piped output or CI logs), or when
   the `NO_COLOR` environment variable is set to any non-empty value.
-- `--json` - print a single JSON document (`{"results": [...]}`, one object per dataset with its
-  `id`, `status`, fingerprints, and any warnings) instead of colorized text, for scripts and other
-  programmatic consumers. Exit codes are unchanged.
+- `--json` - print a single JSON document instead of colorized text, for scripts and other
+  programmatic consumers (`check`/`fetch`: `{"results": [...]}`, one object per dataset with its
+  `id`, `status`, fingerprints, and any warnings; `audit`: `{"entries": [...]}`, see below). Exit
+  codes are unchanged.
+
+`delete` and `unlock` additionally accept:
+
+- `--yes` - skip the confirmation prompt (for scripts/CI). Has no effect on other commands.
 
 ```bash
 datum --timeout 2m --concurrency 4 check
@@ -36,6 +48,9 @@ datum --config other.yaml --lock other.lock.yaml check
 
 # Machine-readable output for scripting:
 datum --json check
+
+# --yes goes before the subcommand too, like every other flag:
+datum --yes delete some_id
 ```
 
 ## `datum check`
@@ -108,7 +123,7 @@ datum --yes delete ID [ID ...]
 - `2` - Configuration/lock error, no IDs given, or an ID isn't a known dataset
 
 <details markdown="1">
-<summary>▶ Watch a live run</summary>
+<summary>🎬 Watch a live run</summary>
 
 <img src="{{ '/assets/img/delete.gif' | relative_url }}" alt="Terminal recording of datum delete removing a tracked file with --yes, datum check skipping the deleted dataset, then datum undelete plus datum fetch restoring it" width="600" loading="lazy">
 
@@ -179,6 +194,13 @@ datum --json audit
 `--no-color` and `NO_COLOR` are honored the same as `check`/`fetch`. Exit code is always `0`
 unless the config or lockfile can't be loaded (`2`) - `audit` reports what it finds, it doesn't
 judge it; that's what `check` is for.
+
+<details markdown="1">
+<summary>🎬 Watch a live run</summary>
+
+<img src="{{ '/assets/img/audit.gif' | relative_url }}" alt="Terminal recording of datum audit reporting ok, pending, deleted, and orphaned datasets after a fetch, a delete, and a config edit, followed by datum --json audit" width="600" loading="lazy">
+
+</details>
 
 Next: [Handlers]({{ '/handlers.html' | relative_url }}) for what each source type supports, or
 [Examples]({{ '/examples.html' | relative_url }}) to see full working configs.

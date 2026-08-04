@@ -36,10 +36,14 @@ datum/
 │
 ├── internal/               # Internal packages
 │   ├── core/               # Core business logic
+│   │   ├── audit.go        # Audit implementation (read-only config+lockfile report)
+│   │   ├── color.go        # ANSI color helpers for status output
 │   │   ├── config.go       # Configuration file parsing
+│   │   ├── delete.go       # Delete, Undelete, and Unlock implementations
 │   │   ├── engine.go       # Check and Fetch implementations
 │   │   ├── hash.go         # File hashing utilities
-│   │   └── lock.go         # Lockfile operations
+│   │   ├── lock.go         # Lockfile operations
+│   │   └── result.go       # --json output types and encoding
 │   │
 │   ├── handlers/            # Data source handlers (plugins)
 │   │   ├── http/
@@ -74,12 +78,20 @@ datum/
 
 **`cmd/datum/main.go`** - Application entry point
 - Parses command-line flags
-- Dispatches to `core.Check()` or `core.Fetch()`
+- Dispatches to `core.Check()`, `core.Fetch()`, `core.Delete()`, `core.Undelete()`,
+  `core.Unlock()`, or `core.Audit()`
 - Handles exit codes
 
 **`internal/core/engine.go`** - Main logic
 - `Check()`: Verifies datasets and applies policies
 - `Fetch()`: Downloads datasets and updates lockfile
+
+**`internal/core/delete.go`** - Dataset removal lifecycle
+- `Delete()`/`Undelete()`: remove/restore a dataset's local files and its `deleted` lockfile flag
+- `Unlock()`: permanently forgets a lockfile entry (config-tracked, deleted, or orphaned)
+
+**`internal/core/audit.go`** - Read-only reporting
+- `Audit()`: reports every dataset's combined config+lockfile state without contacting a source
 
 **`internal/registry/registry.go`** - Handler registry
 - Global map of handler name -> implementation
