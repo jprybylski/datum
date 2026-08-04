@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/jprybylski/datum/internal/registry"
@@ -240,35 +241,6 @@ func TestHandler_Fetch_Directory(t *testing.T) {
 		}
 	})
 
-	t.Run("file removed from source is removed from dest", func(t *testing.T) {
-		srcDir := t.TempDir()
-		mustWriteFile(t, filepath.Join(srcDir, "keep.txt"), "keep")
-		mustWriteFile(t, filepath.Join(srcDir, "removeme.txt"), "gone soon")
-		destDir := filepath.Join(t.TempDir(), "out")
-		src := registry.Source{Path: srcDir}
-
-		if err := h.Fetch(ctx, src, destDir); err != nil {
-			t.Fatalf("Fetch() error = %v", err)
-		}
-		if _, err := os.Stat(filepath.Join(destDir, "removeme.txt")); err != nil {
-			t.Fatalf("removeme.txt should exist after first fetch: %v", err)
-		}
-
-		if err := os.Remove(filepath.Join(srcDir, "removeme.txt")); err != nil {
-			t.Fatal(err)
-		}
-		if err := h.Fetch(ctx, src, destDir); err != nil {
-			t.Fatalf("Fetch() second call error = %v", err)
-		}
-
-		if _, err := os.Stat(filepath.Join(destDir, "removeme.txt")); !os.IsNotExist(err) {
-			t.Errorf("removeme.txt should have been deleted from dest, stat err = %v", err)
-		}
-		if _, err := os.Stat(filepath.Join(destDir, "keep.txt")); err != nil {
-			t.Errorf("keep.txt should still exist: %v", err)
-		}
-	})
-
 	t.Run("unrelated pre-existing file in dest is left alone", func(t *testing.T) {
 		srcDir := t.TempDir()
 		mustWriteFile(t, filepath.Join(srcDir, "managed.txt"), "managed")
@@ -287,20 +259,163 @@ func TestHandler_Fetch_Directory(t *testing.T) {
 		}
 	})
 
-	t.Run("manifest sidecar is a sibling of dest, not inside it", func(t *testing.T) {
+	t.Run("no manifest sidecar is written to disk", func(t *testing.T) {
+		// #18: manifest state is threaded through FetchDir's return value / prevManifest
+		// parameter (persisted by the caller in the lockfile), not written to disk by the
+		// handler itself.
 		srcDir := t.TempDir()
 		mustWriteFile(t, filepath.Join(srcDir, "a.txt"), "aaa")
-		destDir := filepath.Join(t.TempDir(), "out")
+		parent := t.TempDir()
+		destDir := filepath.Join(parent, "out")
 		src := registry.Source{Path: srcDir}
 
 		if err := h.Fetch(ctx, src, destDir); err != nil {
 			t.Fatalf("Fetch() error = %v", err)
 		}
-		if _, err := os.Stat(destDir + manifestSuffix); err != nil {
-			t.Errorf("expected manifest sidecar at %s: %v", destDir+manifestSuffix, err)
+
+		entries, err := os.ReadDir(parent)
+		if err != nil {
+			t.Fatalf("ReadDir(parent) error = %v", err)
 		}
-		if _, err := os.Stat(filepath.Join(destDir, manifestSuffix)); !os.IsNotExist(err) {
-			t.Error("manifest sidecar should not be written inside dest")
+		if len(entries) != 1 || entries[0].Name() != "out" {
+			var names []string
+			for _, e := range entries {
+				names = append(names, e.Name())
+			}
+			t.Errorf("parent dir entries = %v, want only %q (no sidecar file)", names, "out")
+		}
+	})
+}
+
+func TestHandler_FetchDir_ManifestThreading(t *testing.T) {
+	ctx := context.Background()
+	h := New()
+
+	t.Run("returns the sorted relative paths it wrote", func(t *testing.T) {
+		srcDir := t.TempDir()
+		mustWriteFile(t, filepath.Join(srcDir, "b.txt"), "bbb")
+		mustWriteFile(t, filepath.Join(srcDir, "a.txt"), "aaa")
+		mustWriteFile(t, filepath.Join(srcDir, "sub", "c.txt"), "ccc")
+		destDir := filepath.Join(t.TempDir(), "out")
+
+		manifest, err := h.FetchDir(ctx, registry.Source{Path: srcDir}, destDir, nil, nil)
+		if err != nil {
+			t.Fatalf("FetchDir() error = %v", err)
+		}
+		want := []string{"a.txt", "b.txt", "sub/c.txt"}
+		if !reflect.DeepEqual(manifest, want) {
+			t.Errorf("manifest = %v, want %v", manifest, want)
+		}
+	})
+
+	t.Run("prevManifest drives removal of files gone from source, disjoint claimed left alone", func(t *testing.T) {
+		srcDir := t.TempDir()
+		mustWriteFile(t, filepath.Join(srcDir, "keep.txt"), "keep")
+		mustWriteFile(t, filepath.Join(srcDir, "removeme.txt"), "gone soon")
+		destDir := filepath.Join(t.TempDir(), "out")
+		src := registry.Source{Path: srcDir}
+
+		// Simulate another dataset already owning "other/owned.txt" in the same destDir - a
+		// disjoint path this fetch never touches.
+		mustWriteFile(t, filepath.Join(destDir, "other", "owned.txt"), "not mine")
+		claimed := map[string]bool{"other/owned.txt": true}
+
+		manifest1, err := h.FetchDir(ctx, src, destDir, nil, claimed)
+		if err != nil {
+			t.Fatalf("first FetchDir() error = %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(destDir, "removeme.txt")); err != nil {
+			t.Fatalf("removeme.txt should exist after first fetch: %v", err)
+		}
+
+		if err := os.Remove(filepath.Join(srcDir, "removeme.txt")); err != nil {
+			t.Fatal(err)
+		}
+		manifest2, err := h.FetchDir(ctx, src, destDir, manifest1, claimed)
+		if err != nil {
+			t.Fatalf("second FetchDir() error = %v", err)
+		}
+
+		if _, err := os.Stat(filepath.Join(destDir, "removeme.txt")); !os.IsNotExist(err) {
+			t.Errorf("removeme.txt should have been deleted from dest, stat err = %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(destDir, "keep.txt")); err != nil {
+			t.Errorf("keep.txt should still exist: %v", err)
+		}
+		if got, err := os.ReadFile(filepath.Join(destDir, "other", "owned.txt")); err != nil || string(got) != "not mine" {
+			t.Errorf("other dataset's owned.txt was touched: content = %q, err = %v", got, err)
+		}
+		want := []string{"keep.txt"}
+		if !reflect.DeepEqual(manifest2, want) {
+			t.Errorf("second manifest = %v, want %v", manifest2, want)
+		}
+	})
+
+	t.Run("removing the last file in a subdirectory removes the now-empty subdirectory", func(t *testing.T) {
+		srcDir := t.TempDir()
+		mustWriteFile(t, filepath.Join(srcDir, "sub", "nested", "only.txt"), "content")
+		destDir := filepath.Join(t.TempDir(), "out")
+		src := registry.Source{Path: srcDir}
+
+		manifest1, err := h.FetchDir(ctx, src, destDir, nil, nil)
+		if err != nil {
+			t.Fatalf("first FetchDir() error = %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(destDir, "sub", "nested", "only.txt")); err != nil {
+			t.Fatalf("only.txt should exist after first fetch: %v", err)
+		}
+
+		if err := os.RemoveAll(filepath.Join(srcDir, "sub")); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := h.FetchDir(ctx, src, destDir, manifest1, nil); err != nil {
+			t.Fatalf("second FetchDir() error = %v", err)
+		}
+
+		if _, err := os.Stat(filepath.Join(destDir, "sub")); !os.IsNotExist(err) {
+			t.Errorf("dest sub/ should have been removed once empty, stat err = %v", err)
+		}
+		if _, err := os.Stat(destDir); err != nil {
+			t.Errorf("destDir itself should still exist: %v", err)
+		}
+	})
+
+	t.Run("a claimed path fails the fetch and writes nothing", func(t *testing.T) {
+		srcDir := t.TempDir()
+		mustWriteFile(t, filepath.Join(srcDir, "dir1", "same.txt"), "mine")
+		destDir := filepath.Join(t.TempDir(), "out")
+		src := registry.Source{Path: srcDir}
+		claimed := map[string]bool{"dir1/same.txt": true}
+
+		if _, err := h.FetchDir(ctx, src, destDir, nil, claimed); err == nil {
+			t.Fatal("FetchDir() with a claimed conflicting path expected an error, got nil")
+		}
+	})
+
+	t.Run("two sources with disjoint subdirectories of the same name merge fine", func(t *testing.T) {
+		srcA := t.TempDir()
+		mustWriteFile(t, filepath.Join(srcA, "dir1", "a.txt"), "aaa")
+		srcB := t.TempDir()
+		mustWriteFile(t, filepath.Join(srcB, "dir1", "b.txt"), "bbb")
+		destDir := filepath.Join(t.TempDir(), "out")
+
+		manifestA, err := h.FetchDir(ctx, registry.Source{Path: srcA}, destDir, nil, nil)
+		if err != nil {
+			t.Fatalf("FetchDir(A) error = %v", err)
+		}
+		claimedForB := map[string]bool{}
+		for _, r := range manifestA {
+			claimedForB[r] = true
+		}
+		if _, err := h.FetchDir(ctx, registry.Source{Path: srcB}, destDir, nil, claimedForB); err != nil {
+			t.Fatalf("FetchDir(B) error = %v", err)
+		}
+
+		if got, err := os.ReadFile(filepath.Join(destDir, "dir1", "a.txt")); err != nil || string(got) != "aaa" {
+			t.Errorf("dest dir1/a.txt = %q, %v; want %q, nil", got, err, "aaa")
+		}
+		if got, err := os.ReadFile(filepath.Join(destDir, "dir1", "b.txt")); err != nil || string(got) != "bbb" {
+			t.Errorf("dest dir1/b.txt = %q, %v; want %q, nil", got, err, "bbb")
 		}
 	})
 }

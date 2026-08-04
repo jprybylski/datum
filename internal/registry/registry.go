@@ -50,6 +50,28 @@ type Fetcher interface {
 	Fetch(ctx context.Context, src Source, dest string) error
 }
 
+// DirManifestFetcher is an optional interface for handlers whose Fetch may populate a directory
+// tree rather than write a single file. When a handler implements it, the engine calls FetchDir
+// instead of Fetch, threading through the manifest of relative paths this same dataset wrote
+// under dest on its previous run (so the handler knows what to remove if a file disappears from
+// the source) and getting the new manifest back to persist. The engine stores that manifest on
+// the dataset's LockItem, not a sidecar file the handler would otherwise have to write to disk
+// itself - manifest state belongs in the lockfile alongside the rest of a dataset's tracked
+// state, not scattered next to fetched data.
+//
+// claimed lists relative paths that, as of the lockfile, belong to a *different* dataset that
+// targets the same dest directory - multiple datasets are allowed to share a target as long as
+// they don't write the same relative path. A handler should fail the fetch rather than write any
+// path in claimed, since that would silently overwrite (or be silently overwritten by) that other
+// dataset's file.
+//
+// For a source that turns out to be a single file rather than a directory, FetchDir should behave
+// like Fetch and return a nil manifest.
+type DirManifestFetcher interface {
+	Fetcher
+	FetchDir(ctx context.Context, src Source, dest string, prevManifest []string, claimed map[string]bool) (manifest []string, err error)
+}
+
 // fetchers is the global registry of all available handlers.
 // This is a package-level variable that persists for the lifetime of the program.
 // It's populated by handler init() functions at startup.

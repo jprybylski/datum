@@ -33,6 +33,15 @@ type LockItem struct {
 	CheckedAt         *time.Time `yaml:"checked_at,omitempty"`         // Last verification timestamp
 	InaccessibleAt    *time.Time `yaml:"inaccessible_at,omitempty"`    // When the source became inaccessible
 	InaccessibleError string     `yaml:"inaccessible_error,omitempty"` // Error message when fetch failed
+
+	// DirPaths records the relative paths this dataset wrote under Target on its last directory
+	// fetch (nil/omitted for datasets whose target is a single file). Handlers that sync whole
+	// directories (registry.DirManifestFetcher) use it, via the engine, to know which target
+	// files to remove when they disappear from the source, and to let multiple datasets safely
+	// share the same target directory without one dataset's cleanup touching another's files.
+	// This lives in the lockfile rather than a sidecar file the handler writes to disk itself, so
+	// all of a dataset's tracked state stays in one place.
+	DirPaths []string `yaml:"dir_paths,omitempty"`
 }
 
 // readLock loads the lockfile from disk.

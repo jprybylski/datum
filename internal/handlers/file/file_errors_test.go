@@ -170,54 +170,87 @@ func TestHandler_Fetch_Directory_OneSourceFileUnreadable(t *testing.T) {
 	}
 }
 
-// --- readManifest / writeManifest error paths ---
+// --- FetchDir conflict / cleanup error paths ---
 
-func TestReadManifest_CorruptJSON(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "manifest.json")
-	mustWriteFile(t, path, "not valid json{{{")
-
-	if _, err := readManifest(path); err == nil {
-		t.Error("readManifest() with corrupt JSON expected an error, got nil")
-	}
-}
-
-func TestReadManifest_MissingFile(t *testing.T) {
-	if _, err := readManifest(filepath.Join(t.TempDir(), "nonexistent.json")); err == nil {
-		t.Error("readManifest() for a missing file expected an error, got nil")
-	}
-}
-
-func TestWriteManifest_DirNotWritable(t *testing.T) {
-	skipUnlessCanDenyRead(t)
-	dir := t.TempDir()
-	if err := os.Chmod(dir, 0o555); err != nil {
-		t.Fatal(err)
-	}
-	defer chmodOrLog(t, dir, 0o755)
-
-	err := writeManifest(filepath.Join(dir, "manifest.json"), []string{"a.txt"})
-	if err == nil {
-		t.Error("writeManifest() into a non-writable directory expected an error, got nil")
-	}
-}
-
-// --- directory Fetch with a corrupt pre-existing manifest ---
-
-func TestHandler_Fetch_Directory_CorruptManifestIsIgnored(t *testing.T) {
-	// A missing or corrupt manifest just means there's no prior state to diff against - not a
-	// fetch failure. This exercises fetchDir's `prevRels, _ := readManifest(...)` swallow path.
+func TestHandler_FetchDir_ConflictLeavesDestUntouched(t *testing.T) {
+	// A relative path already claimed by another dataset must fail the fetch before writing
+	// anything, rather than partially writing non-conflicting files.
 	srcDir := t.TempDir()
-	mustWriteFile(t, filepath.Join(srcDir, "a.txt"), "aaa")
+	mustWriteFile(t, filepath.Join(srcDir, "shared.txt"), "mine")
+	mustWriteFile(t, filepath.Join(srcDir, "onlymine.txt"), "safe")
 
 	destDir := filepath.Join(t.TempDir(), "out")
-	mustWriteFile(t, destDir+manifestSuffix, "not valid json{{{")
+	claimed := map[string]bool{"shared.txt": true}
 
 	h := New()
-	if err := h.Fetch(context.Background(), registry.Source{Path: srcDir}, destDir); err != nil {
-		t.Fatalf("Fetch() with a corrupt pre-existing manifest error = %v, want nil", err)
+	manifest, err := h.FetchDir(context.Background(), registry.Source{Path: srcDir}, destDir, nil, claimed)
+	if err == nil {
+		t.Fatal("FetchDir() with a claimed path expected an error, got nil")
 	}
-	got, err := os.ReadFile(filepath.Join(destDir, "a.txt"))
-	if err != nil || string(got) != "aaa" {
-		t.Errorf("a.txt = %q, %v; want %q, nil", got, err, "aaa")
+	if !strings.Contains(err.Error(), "shared.txt") {
+		t.Errorf("error = %v, want it to mention the conflicting path", err)
+	}
+	if manifest != nil {
+		t.Errorf("manifest = %v, want nil on conflict", manifest)
+	}
+	if _, statErr := os.Stat(destDir); !os.IsNotExist(statErr) {
+		t.Errorf("destDir should not have been created on conflict, stat err = %v", statErr)
+	}
+}
+
+// --- removeEmptyParents error/no-op paths ---
+
+func TestRemoveEmptyParents_NonEmptyDirLeftAlone(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "sub", "sibling.txt"), "still here")
+
+	removeEmptyParents(root, "sub")
+
+	if _, err := os.Stat(filepath.Join(root, "sub")); err != nil {
+		t.Errorf("non-empty sub/ should have been left alone: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "sub", "sibling.txt")); err != nil {
+		t.Errorf("sibling.txt should have been left alone: %v", err)
+	}
+}
+
+func TestRemoveEmptyParents_UnreadableDirIsANoOp(t *testing.T) {
+	skipUnlessCanDenyRead(t)
+	root := t.TempDir()
+	sub := filepath.Join(root, "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(sub, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	defer chmodOrLog(t, sub, 0o755)
+
+	// Should return without panicking; os.ReadDir failing is treated the same as "not empty".
+	removeEmptyParents(root, "sub")
+
+	if _, err := os.Stat(sub); err != nil {
+		t.Errorf("sub/ should still exist after a failed ReadDir: %v", err)
+	}
+}
+
+func TestRemoveEmptyParents_RemoveFailsIsANoOp(t *testing.T) {
+	skipUnlessCanDenyRead(t)
+	root := t.TempDir()
+	sub := filepath.Join(root, "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// sub/ is empty and readable, but root/ is not writable, so removing sub/ (which requires
+	// write permission on its parent) fails even though ReadDir(sub) succeeded.
+	if err := os.Chmod(root, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	defer chmodOrLog(t, root, 0o755)
+
+	removeEmptyParents(root, "sub")
+
+	if _, err := os.Stat(sub); err != nil {
+		t.Errorf("sub/ should still exist after a failed Remove: %v", err)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -30,7 +31,7 @@ import (
 // res is optional (nil when the caller isn't collecting structured --json output); when non-nil,
 // every [WARN] line's message is also appended to res.Warnings, so JSON output carries the same
 // source-fallback trail as the human-readable text.
-func sourceAttempt(w io.Writer, res *Result, dsID string, sources []registry.Source, attempt func(f registry.Fetcher, source registry.Source) (value, warnLabel string, err error)) (string, error) {
+func sourceAttempt[T any](w io.Writer, res *Result, dsID string, sources []registry.Source, attempt func(f registry.Fetcher, source registry.Source) (value T, warnLabel string, err error)) (T, error) {
 	warn := func(msg string) {
 		fmt.Fprintf(w, "%s %s: %s\n", colorize(ansiYellow, "[WARN]"), dsID, msg)
 		if res != nil {
@@ -38,6 +39,7 @@ func sourceAttempt(w io.Writer, res *Result, dsID string, sources []registry.Sou
 		}
 	}
 
+	var zero T
 	var lastErr error
 	for i, source := range sources {
 		f, ok := registry.Get(source.Type)
@@ -64,7 +66,7 @@ func sourceAttempt(w io.Writer, res *Result, dsID string, sources []registry.Sou
 
 		return value, nil
 	}
-	return "", lastErr
+	return zero, lastErr
 }
 
 // writeFingerprintChange writes a "remote changed" block as a header line naming the dataset,
@@ -91,20 +93,67 @@ func fingerprintAttempt(ctx context.Context) func(registry.Fetcher, registry.Sou
 	}
 }
 
+// fetchResult is what a successful fetchAttempt produces: the fingerprint to record, plus (for
+// handlers that populate a directory tree) the manifest of relative paths written, which the
+// caller persists on the dataset's LockItem.DirPaths for next time.
+type fetchResult struct {
+	fp       string
+	manifest []string
+}
+
 // fetchAttempt builds a sourceAttempt callback that fetches into dest, then re-fingerprints the
 // source so the lockfile records the fingerprint that actually corresponds to what was fetched.
 // A source only counts as succeeded if both steps succeed.
-func fetchAttempt(ctx context.Context, dest string) func(registry.Fetcher, registry.Source) (string, string, error) {
-	return func(f registry.Fetcher, source registry.Source) (string, string, error) {
-		if err := f.Fetch(ctx, source, dest); err != nil {
-			return "", "fetch", err
+//
+// If the handler implements registry.DirManifestFetcher, FetchDir is called instead of Fetch,
+// threading prevManifest (this dataset's own manifest from its last fetch) and claimed (relative
+// paths other datasets targeting the same dest already own, see claimedPaths) through so the
+// handler can safely share dest with other datasets and detect naming conflicts between them.
+func fetchAttempt(ctx context.Context, dest string, prevManifest []string, claimed map[string]bool) func(registry.Fetcher, registry.Source) (fetchResult, string, error) {
+	return func(f registry.Fetcher, source registry.Source) (fetchResult, string, error) {
+		var manifest []string
+		if mf, ok := f.(registry.DirManifestFetcher); ok {
+			m, err := mf.FetchDir(ctx, source, dest, prevManifest, claimed)
+			if err != nil {
+				return fetchResult{}, "fetch", err
+			}
+			manifest = m
+		} else if err := f.Fetch(ctx, source, dest); err != nil {
+			return fetchResult{}, "fetch", err
 		}
 		fp, err := f.Fingerprint(ctx, source)
 		if err != nil {
-			return "", "fingerprint after fetch", err
+			return fetchResult{}, "fingerprint after fetch", err
 		}
-		return fp, "", nil
+		return fetchResult{fp: fp, manifest: manifest}, "", nil
 	}
+}
+
+// claimedPaths returns the set of relative paths that, as of the lockfile, belong to some other
+// dataset whose Target is the same directory as target (compared after filepath.Clean, so e.g.
+// "data" and "./data" match). Multiple datasets are allowed to sync into the same target
+// directory; this is how a DirManifestFetcher handler knows which relative paths it must not
+// write, because a different dataset already owns them there.
+//
+// Note this is a best-effort, read-then-fetch check like the rest of datum's fetch pipeline (see
+// fetchDir's atomicity note in the file handler) - it isn't safe against two datasets that share a
+// target being fetched fully concurrently (--concurrency > 1) and racing past this check at the
+// same time. Configs that share a target should be fetched at --concurrency 1 for the guarantee
+// to hold.
+func claimedPaths(datasets []Dataset, store *lockStore, selfID, target string) map[string]bool {
+	claimed := map[string]bool{}
+	cleanTarget := filepath.Clean(target)
+	for _, other := range datasets {
+		if other.ID == selfID || filepath.Clean(other.Target) != cleanTarget {
+			continue
+		}
+		if item := store.get(other.ID); item != nil {
+			for _, rel := range item.DirPaths {
+				claimed[rel] = true
+			}
+		}
+	}
+	return claimed
 }
 
 // lockStore provides mutex-guarded access to a Lock's Items map, so multiple datasets can be
@@ -215,7 +264,7 @@ func Check(ctx context.Context, cfgPath, lockPath string, concurrency int) int {
 		if JSONOutput {
 			w = io.Discard
 		}
-		exitCodes[i] = checkOneDataset(ctx, w, &results[i], ds, policy, store, now)
+		exitCodes[i] = checkOneDataset(ctx, w, &results[i], ds, policy, store, now, cfg.Datasets)
 		outputs[i] = out.String()
 	})
 
@@ -252,7 +301,7 @@ func Check(ctx context.Context, cfgPath, lockPath string, concurrency int) int {
 //
 // res is optional (nil unless the caller is building --json output); when non-nil it's populated
 // with the same outcome the text lines describe, so the two output modes never disagree.
-func checkOneDataset(ctx context.Context, w io.Writer, res *Result, ds Dataset, policy string, store *lockStore, now time.Time) int {
+func checkOneDataset(ctx context.Context, w io.Writer, res *Result, ds Dataset, policy string, store *lockStore, now time.Time, allDatasets []Dataset) int {
 	sources := ds.GetSources()
 
 	// Compute the current remote fingerprint, trying each source in order until one succeeds
@@ -302,8 +351,14 @@ func checkOneDataset(ctx context.Context, w io.Writer, res *Result, ds Dataset, 
 		if stale || !fileExists(ds.Target) {
 			fmt.Fprintf(w, "%s %s: refreshing\n", colorize(ansiCyan, "[UPD ]"), ds.ID)
 
+			var prevManifest []string
+			if item != nil {
+				prevManifest = item.DirPaths
+			}
+			claimed := claimedPaths(allDatasets, store, ds.ID, ds.Target)
+
 			// Fetch (and re-fingerprint) from the first source that succeeds at both steps
-			newFp, err := sourceAttempt(w, res, ds.ID, sources, fetchAttempt(ctx, ds.Target))
+			result, err := sourceAttempt(w, res, ds.ID, sources, fetchAttempt(ctx, ds.Target, prevManifest, claimed))
 			if err != nil {
 				var msg string
 				if len(sources) > 1 {
@@ -323,7 +378,7 @@ func checkOneDataset(ctx context.Context, w io.Writer, res *Result, ds Dataset, 
 				}
 				return 1
 			}
-			fp = newFp
+			fp = result.fp
 
 			// Update lockfile with new fingerprint and local hash
 			// Clear inaccessible status since fetch succeeded
@@ -335,7 +390,7 @@ func checkOneDataset(ctx context.Context, w io.Writer, res *Result, ds Dataset, 
 					res.Warnings = append(res.Warnings, msg)
 				}
 			}
-			store.set(ds.ID, &LockItem{LocalSHA256: h, RemoteFingerprint: fp, CheckedAt: &now, InaccessibleAt: nil, InaccessibleError: ""})
+			store.set(ds.ID, &LockItem{LocalSHA256: h, RemoteFingerprint: fp, DirPaths: result.manifest, CheckedAt: &now, InaccessibleAt: nil, InaccessibleError: ""})
 			if res != nil {
 				res.Status = StatusUpdated
 				res.LockFingerprint = lockfp
@@ -473,7 +528,7 @@ func Fetch(ctx context.Context, cfgPath, lockPath string, ids []string, concurre
 		if JSONOutput {
 			w = io.Discard
 		}
-		exitCodes[i] = fetchOneDataset(ctx, w, &results[i], selected[i], store, now)
+		exitCodes[i] = fetchOneDataset(ctx, w, &results[i], selected[i], store, now, cfg.Datasets)
 		outputs[i] = out.String()
 	})
 
@@ -510,13 +565,19 @@ func Fetch(ctx context.Context, cfgPath, lockPath string, ids []string, concurre
 //
 // res is optional (nil unless the caller is building --json output); when non-nil it's populated
 // with the same outcome the text lines describe, so the two output modes never disagree.
-func fetchOneDataset(ctx context.Context, w io.Writer, res *Result, ds Dataset, store *lockStore, now time.Time) int {
+func fetchOneDataset(ctx context.Context, w io.Writer, res *Result, ds Dataset, store *lockStore, now time.Time, allDatasets []Dataset) int {
 	sources := ds.GetSources()
 
 	fmt.Fprintf(w, "%s %s\n", colorize(ansiCyan, "[FETCH]"), ds.ID)
 
+	var prevManifest []string
+	if item := store.get(ds.ID); item != nil {
+		prevManifest = item.DirPaths
+	}
+	claimed := claimedPaths(allDatasets, store, ds.ID, ds.Target)
+
 	// Fetch (and re-fingerprint) from the first source that succeeds at both steps
-	fp, err := sourceAttempt(w, res, ds.ID, sources, fetchAttempt(ctx, ds.Target))
+	result, err := sourceAttempt(w, res, ds.ID, sources, fetchAttempt(ctx, ds.Target, prevManifest, claimed))
 	if err != nil {
 		var msg string
 		if len(sources) > 1 {
@@ -546,10 +607,10 @@ func fetchOneDataset(ctx context.Context, w io.Writer, res *Result, ds Dataset, 
 			res.Warnings = append(res.Warnings, msg)
 		}
 	}
-	store.set(ds.ID, &LockItem{LocalSHA256: h, RemoteFingerprint: fp, CheckedAt: &now, InaccessibleAt: nil, InaccessibleError: ""})
+	store.set(ds.ID, &LockItem{LocalSHA256: h, RemoteFingerprint: result.fp, DirPaths: result.manifest, CheckedAt: &now, InaccessibleAt: nil, InaccessibleError: ""})
 	if res != nil {
 		res.Status = StatusFetched
-		res.RemoteFingerprint = fp
+		res.RemoteFingerprint = result.fp
 	}
 	return 0
 }
