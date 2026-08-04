@@ -23,6 +23,7 @@ const (
 	StatusFail    Status = "fail"    // "fail" policy: remote changed, treated as an error
 	StatusWarn    Status = "warn"    // unrecognized policy name in config
 	StatusError   Status = "error"   // fingerprint/fetch failed against every configured source
+	StatusDeleted Status = "deleted" // `datum delete` removed this dataset; check/fetch skipped it
 )
 
 // Result is one dataset's outcome. LockFingerprint/RemoteFingerprint are only set once a

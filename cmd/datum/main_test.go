@@ -188,6 +188,166 @@ func TestRun(t *testing.T) {
 	})
 }
 
+func TestRun_DeleteUndelete(t *testing.T) {
+	t.Run("delete with --yes removes target and marks lockfile deleted", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		srcFile := filepath.Join(tmpDir, "src.txt")
+		if err := os.WriteFile(srcFile, []byte("hello"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		targetFile := filepath.Join(tmpDir, "target.txt")
+		cfgPath := filepath.Join(tmpDir, ".data.yaml")
+		cfgContent := "version: 1\ndatasets:\n  - id: del_test\n    source:\n      type: file\n      path: " + srcFile + "\n    target: " + targetFile + "\n"
+		if err := os.WriteFile(cfgPath, []byte(cfgContent), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		lockPath := filepath.Join(tmpDir, ".data.lock.yaml")
+
+		if code := run([]string{"--config", cfgPath, "--lock", lockPath, "fetch"}); code != 0 {
+			t.Fatalf("run(fetch) = %d, want 0", code)
+		}
+		if _, err := os.Stat(targetFile); err != nil {
+			t.Fatalf("target file not created by fetch: %v", err)
+		}
+
+		code := run([]string{"--config", cfgPath, "--lock", lockPath, "--yes", "delete", "del_test"})
+		if code != 0 {
+			t.Errorf("run(delete --yes) = %d, want 0", code)
+		}
+		if _, err := os.Stat(targetFile); !os.IsNotExist(err) {
+			t.Errorf("target file should have been removed by delete, stat err = %v", err)
+		}
+
+		// check must skip the deleted dataset rather than failing on the now-missing target.
+		code = run([]string{"--config", cfgPath, "--lock", lockPath, "check"})
+		if code != 0 {
+			t.Errorf("run(check) after delete = %d, want 0 (skip, not fail)", code)
+		}
+	})
+
+	t.Run("undelete clears the flag so fetch restores the data", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		srcFile := filepath.Join(tmpDir, "src.txt")
+		if err := os.WriteFile(srcFile, []byte("hello"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		targetFile := filepath.Join(tmpDir, "target.txt")
+		cfgPath := filepath.Join(tmpDir, ".data.yaml")
+		cfgContent := "version: 1\ndatasets:\n  - id: undel_test\n    source:\n      type: file\n      path: " + srcFile + "\n    target: " + targetFile + "\n"
+		if err := os.WriteFile(cfgPath, []byte(cfgContent), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		lockPath := filepath.Join(tmpDir, ".data.lock.yaml")
+
+		if code := run([]string{"--config", cfgPath, "--lock", lockPath, "fetch"}); code != 0 {
+			t.Fatalf("run(fetch) = %d, want 0", code)
+		}
+		if code := run([]string{"--config", cfgPath, "--lock", lockPath, "--yes", "delete", "undel_test"}); code != 0 {
+			t.Fatalf("run(delete --yes) = %d, want 0", code)
+		}
+
+		if code := run([]string{"--lock", lockPath, "undelete", "undel_test"}); code != 0 {
+			t.Errorf("run(undelete) = %d, want 0", code)
+		}
+
+		if code := run([]string{"--config", cfgPath, "--lock", lockPath, "fetch", "undel_test"}); code != 0 {
+			t.Errorf("run(fetch) after undelete = %d, want 0", code)
+		}
+		if _, err := os.Stat(targetFile); err != nil {
+			t.Errorf("target file should exist again after undelete + fetch: %v", err)
+		}
+	})
+
+	t.Run("delete with no ids shows usage and exits 2", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		code := run([]string{"--config", filepath.Join(tmpDir, ".data.yaml"), "--lock", filepath.Join(tmpDir, ".data.lock.yaml"), "delete"})
+		if code != 2 {
+			t.Errorf("run(delete, no ids) = %d, want 2", code)
+		}
+	})
+
+	t.Run("undelete with no ids shows usage and exits 2", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		code := run([]string{"--lock", filepath.Join(tmpDir, ".data.lock.yaml"), "undelete"})
+		if code != 2 {
+			t.Errorf("run(undelete, no ids) = %d, want 2", code)
+		}
+	})
+}
+
+func TestRun_UnlockAudit(t *testing.T) {
+	t.Run("unlock with --yes removes an orphaned lockfile entry", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		srcFile := filepath.Join(tmpDir, "src.txt")
+		if err := os.WriteFile(srcFile, []byte("hello"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		targetFile := filepath.Join(tmpDir, "target.txt")
+		cfgPath := filepath.Join(tmpDir, ".data.yaml")
+		cfgContent := "version: 1\ndatasets:\n  - id: unlock_test\n    source:\n      type: file\n      path: " + srcFile + "\n    target: " + targetFile + "\n"
+		if err := os.WriteFile(cfgPath, []byte(cfgContent), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		lockPath := filepath.Join(tmpDir, ".data.lock.yaml")
+
+		if code := run([]string{"--config", cfgPath, "--lock", lockPath, "fetch"}); code != 0 {
+			t.Fatalf("run(fetch) = %d, want 0", code)
+		}
+
+		// Remove the dataset from the config so unlock has an orphaned entry to work on.
+		if err := os.WriteFile(cfgPath, []byte("version: 1\ndatasets: []\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		code := run([]string{"--config", cfgPath, "--lock", lockPath, "--yes", "unlock", "unlock_test"})
+		if code != 0 {
+			t.Errorf("run(unlock --yes) = %d, want 0", code)
+		}
+	})
+
+	t.Run("unlock with no ids shows usage and exits 2", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		code := run([]string{"--config", filepath.Join(tmpDir, ".data.yaml"), "--lock", filepath.Join(tmpDir, ".data.lock.yaml"), "unlock"})
+		if code != 2 {
+			t.Errorf("run(unlock, no ids) = %d, want 2", code)
+		}
+	})
+
+	t.Run("audit reports a freshly fetched dataset as ok", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		srcFile := filepath.Join(tmpDir, "src.txt")
+		if err := os.WriteFile(srcFile, []byte("hello"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		targetFile := filepath.Join(tmpDir, "target.txt")
+		cfgPath := filepath.Join(tmpDir, ".data.yaml")
+		cfgContent := "version: 1\ndatasets:\n  - id: audit_test\n    source:\n      type: file\n      path: " + srcFile + "\n    target: " + targetFile + "\n"
+		if err := os.WriteFile(cfgPath, []byte(cfgContent), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		lockPath := filepath.Join(tmpDir, ".data.lock.yaml")
+
+		if code := run([]string{"--config", cfgPath, "--lock", lockPath, "fetch"}); code != 0 {
+			t.Fatalf("run(fetch) = %d, want 0", code)
+		}
+		if code := run([]string{"--config", cfgPath, "--lock", lockPath, "audit"}); code != 0 {
+			t.Errorf("run(audit) = %d, want 0", code)
+		}
+	})
+
+	t.Run("audit with missing config exits 2", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		code := run([]string{
+			"--config", filepath.Join(tmpDir, "missing.yaml"),
+			"--lock", filepath.Join(tmpDir, "lock.yaml"),
+			"audit",
+		})
+		if code != 2 {
+			t.Errorf("run(audit, missing config) = %d, want 2", code)
+		}
+	})
+}
+
 func TestUsage(t *testing.T) {
 	// Just make sure it doesn't panic; output content isn't load-bearing.
 	usage()

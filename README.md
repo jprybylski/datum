@@ -180,6 +180,21 @@ datum check
 # Download data and update the lockfile (all datasets, or specific IDs)
 datum fetch
 datum fetch dataset1 dataset2
+
+# Remove a dataset's local files and mark it deleted in the lockfile (prompts for
+# confirmation unless --yes; --yes goes before the subcommand, like other flags)
+datum delete dataset1
+datum --yes delete dataset1
+
+# Clear that flag so check/fetch resume tracking it (doesn't refetch by itself)
+datum undelete dataset1
+
+# Permanently forget a lockfile entry - works on orphaned entries left behind by
+# removing a dataset from .data.yaml, or on already-deleted ones
+datum unlock dataset1
+
+# See what's tracked, pending, deleted, or orphaned across config + lockfile
+datum audit
 ```
 
 `check` exits `0` (up-to-date), `1` (changed/failed), or `2` (config error). Full flag reference

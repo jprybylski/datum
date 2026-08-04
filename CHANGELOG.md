@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-08-04
+
+### Added
+- `datum delete ID [ID ...]` removes a dataset's local files (a single file, or - for a
+  directory-synced dataset - just the relative paths it owns, cleaning up any subdirectories left
+  empty and the target directory itself if nothing else targets it) and marks it `deleted` in the
+  lockfile. Prompts for confirmation unless `--yes` is passed. `.data.yaml` is never modified (#17).
+- `datum undelete ID [ID ...]` clears that flag so `check`/`fetch` resume tracking the dataset;
+  follow it with `datum fetch ID` to restore the data (#17).
+- `check`/`fetch` now skip any dataset marked `deleted`, printing a `[SKIP]` line that points to
+  `datum undelete`, instead of treating the missing target as changed/failed (#17).
+- `datum unlock ID [ID ...]` permanently removes a lockfile entry - config-tracked, deleted, or
+  orphaned by editing the dataset out of `.data.yaml` (which `check`/`fetch` already left alone,
+  and still do - see the regression test covering that). Never touches local files or
+  `.data.yaml`; prompts for confirmation unless `--yes` (#17).
+- `datum audit` prints a read-only report of every dataset's combined config+lockfile state -
+  `ok`, `pending` (tracked, never fetched), `deleted`, or `orphaned` - without contacting any data
+  source. Supports `--json`, `--no-color`, and `NO_COLOR` like `check`/`fetch` (#17).
+
 ## [1.2.2] - 2026-08-04
 
 ### Fixed

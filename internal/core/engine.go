@@ -209,6 +209,23 @@ func runConcurrently(n, concurrency int, fn func(i int)) {
 	_ = g.Wait() // fn never returns an error; failures are tracked via per-dataset exit codes
 }
 
+// skipIfDeleted reports whether ds.ID has been removed by `datum delete` (item.Deleted), and if
+// so, writes the standard skip line/result before returning true. Both checkOneDataset and
+// fetchOneDataset call this before doing any source or filesystem work, so a deleted dataset never
+// gets re-fetched or flagged as changed/missing until `datum undelete` clears the flag.
+func skipIfDeleted(w io.Writer, res *Result, dsID string, item *LockItem) bool {
+	if item == nil || !item.Deleted {
+		return false
+	}
+	msg := fmt.Sprintf("deleted - skipping (run 'datum undelete %s' to resume tracking)", dsID)
+	fmt.Fprintf(w, "%s %s: %s\n", colorize(ansiYellow, "[SKIP]"), dsID, msg)
+	if res != nil {
+		res.Status = StatusDeleted
+		res.Message = msg
+	}
+	return true
+}
+
 // Check verifies all configured datasets against the lockfile according to their policies.
 //
 // This is the main verification function for datum. It loads the configuration and lockfile,
@@ -304,6 +321,12 @@ func Check(ctx context.Context, cfgPath, lockPath string, concurrency int) int {
 func checkOneDataset(ctx context.Context, w io.Writer, res *Result, ds Dataset, policy string, store *lockStore, now time.Time, allDatasets []Dataset) int {
 	sources := ds.GetSources()
 
+	// Get the lock entry for this dataset (may be nil if this is the first run)
+	item := store.get(ds.ID)
+	if skipped := skipIfDeleted(w, res, ds.ID, item); skipped {
+		return 0
+	}
+
 	// Compute the current remote fingerprint, trying each source in order until one succeeds
 	fp, err := sourceAttempt(w, res, ds.ID, sources, fingerprintAttempt(ctx))
 	if err != nil {
@@ -321,8 +344,6 @@ func checkOneDataset(ctx context.Context, w io.Writer, res *Result, ds Dataset, 
 		return 1
 	}
 
-	// Get the lock entry for this dataset (may be nil if this is the first run)
-	item := store.get(ds.ID)
 	lockfp := "(none)"
 	if item != nil {
 		lockfp = item.RemoteFingerprint
@@ -568,10 +589,15 @@ func Fetch(ctx context.Context, cfgPath, lockPath string, ids []string, concurre
 func fetchOneDataset(ctx context.Context, w io.Writer, res *Result, ds Dataset, store *lockStore, now time.Time, allDatasets []Dataset) int {
 	sources := ds.GetSources()
 
+	item := store.get(ds.ID)
+	if skipped := skipIfDeleted(w, res, ds.ID, item); skipped {
+		return 0
+	}
+
 	fmt.Fprintf(w, "%s %s\n", colorize(ansiCyan, "[FETCH]"), ds.ID)
 
 	var prevManifest []string
-	if item := store.get(ds.ID); item != nil {
+	if item != nil {
 		prevManifest = item.DirPaths
 	}
 	claimed := claimedPaths(allDatasets, store, ds.ID, ds.Target)
