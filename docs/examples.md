@@ -41,7 +41,7 @@ datum check
 ```
 
 <details markdown="1">
-<summary>▶ Watch a live run</summary>
+<summary>🎬 Watch a live run</summary>
 
 <img src="{{ '/assets/img/basic-fetch.gif' | relative_url }}" alt="Terminal recording of datum fetch followed by datum check against the basic HTTP example" width="600" loading="lazy">
 
@@ -80,7 +80,7 @@ datum check
 ```
 
 <details markdown="1">
-<summary>▶ Watch a live run</summary>
+<summary>🎬 Watch a live run</summary>
 
 <img src="{{ '/assets/img/git-one-file.gif' | relative_url }}" alt="Terminal recording of datum fetch pulling a single LICENSE file out of a git repository, then datum check confirming it's up to date" width="600" loading="lazy">
 
@@ -117,7 +117,7 @@ datum check
 ```
 
 <details markdown="1">
-<summary>▶ Watch a live run</summary>
+<summary>🎬 Watch a live run</summary>
 
 <img src="{{ '/assets/img/file-copy.gif' | relative_url }}" alt="Terminal recording of datum fetch copying a local file, then the source file changing and datum check silently re-copying it under the update policy" width="600" loading="lazy">
 
@@ -155,7 +155,7 @@ datum check
 ```
 
 <details markdown="1">
-<summary>▶ Watch a live run</summary>
+<summary>🎬 Watch a live run</summary>
 
 <img src="{{ '/assets/img/command-system.gif' | relative_url }}" alt="Terminal recording of datum fetch running a shell command to capture system information, then datum check confirming it's up to date" width="600" loading="lazy">
 
@@ -203,7 +203,7 @@ datum check
 ```
 
 <details markdown="1">
-<summary>▶ Watch a live run</summary>
+<summary>🎬 Watch a live run</summary>
 
 This recording uses a scratch config with an unreachable HTTP source (a closed local port) and a
 local file fallback, rather than `examples/multi-source` itself, whose `.data.yaml` uses
@@ -271,7 +271,7 @@ datum check
 ```
 
 <details markdown="1">
-<summary>▶ Watch the same change hit `fail`, `update`, and `log`</summary>
+<summary>🎬 Watch the same change hit `fail`, `update`, and `log`</summary>
 
 To isolate what each policy actually does, this recording uses a simplified stand-in config -
 one local file tracked three times, once per policy - rather than
@@ -316,7 +316,7 @@ datum check
 ```
 
 <details markdown="1">
-<summary>▶ Watch a live run, including a deleted file dropping out of sync</summary>
+<summary>🎬 Watch a live run, including a deleted file dropping out of sync</summary>
 
 <img src="{{ '/assets/img/directory-sync.gif' | relative_url }}" alt="Terminal recording of datum fetch syncing a directory, then a file being deleted from the source and a second fetch removing it from the synced target too" width="600" loading="lazy">
 

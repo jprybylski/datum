@@ -101,7 +101,7 @@ Ready for more? Head to [Installation]({{ '/installation.html' | relative_url }}
 |---|---|
 | [Installation]({{ '/installation.html' | relative_url }}) | Prerequisites, building from source, build tags |
 | [Configuration]({{ '/configuration.html' | relative_url }}) | `.data.yaml` structure, multi-source fallback, policies, IDE schema support |
-| [Commands]({{ '/commands.html' | relative_url }}) | `check` / `fetch`, exit codes, `--timeout` / `--concurrency` |
+| [Commands]({{ '/commands.html' | relative_url }}) | `check` / `fetch` / `delete` / `undelete` / `unlock` / `audit`, exit codes, flags |
 | [Handlers]({{ '/handlers.html' | relative_url }}) | HTTP, File (incl. directory sources), Command, and Git handlers |
 | [Examples]({{ '/examples.html' | relative_url }}) | Seven complete, runnable example configurations |
 | [Comparison]({{ '/comparison.html' | relative_url }}) | How Datum differs from DVC, pins, Pooch, Quilt, LakeFS, Pachyderm |

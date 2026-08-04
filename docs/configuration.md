@@ -106,5 +106,5 @@ for more details.
 - **`update`**: Automatically fetch and update if the remote data has changed
 - **`log`**: Log changes but don't fail or update (monitoring mode)
 
-Next: [Commands]({{ '/commands.html' | relative_url }}) for `check`/`fetch` details and flags, or
-[Handlers]({{ '/handlers.html' | relative_url }}) for what each `source.type` supports.
+Next: [Commands]({{ '/commands.html' | relative_url }}) for the full command reference and flags,
+or [Handlers]({{ '/handlers.html' | relative_url }}) for what each `source.type` supports.

@@ -27,14 +27,16 @@ output), or `internal/handlers/**` (handler-specific output/behavior).
    go build -tags git -o /tmp/datum-tape-bin/datum ./cmd/datum
    ```
    (`-tags git` is a superset - it's fine for the non-git tapes too, so one
-   build covers all 7.)
+   build covers all 9.)
 
 3. **Run every tape from the repo root**, with that bin directory first on
    `PATH` (some tapes' setup scripts reference repo-relative paths like
    `docs/assets/tapes/*-setup.sh`, so the working directory matters):
    ```bash
+   PATH="/tmp/datum-tape-bin:$PATH" vhs docs/assets/tapes/audit.tape
    PATH="/tmp/datum-tape-bin:$PATH" vhs docs/assets/tapes/basic-fetch.tape
    PATH="/tmp/datum-tape-bin:$PATH" vhs docs/assets/tapes/command-system.tape
+   PATH="/tmp/datum-tape-bin:$PATH" vhs docs/assets/tapes/delete.tape
    PATH="/tmp/datum-tape-bin:$PATH" vhs docs/assets/tapes/directory-sync.tape
    PATH="/tmp/datum-tape-bin:$PATH" vhs docs/assets/tapes/file-copy.tape
    PATH="/tmp/datum-tape-bin:$PATH" vhs docs/assets/tapes/git-one-file.tape
@@ -50,7 +52,7 @@ output), or `internal/handlers/**` (handler-specific output/behavior).
    ```bash
    git status --short docs/assets/img/
    ```
-   GIFs are binary, so there's no useful `git diff` - list which of the 7
+   GIFs are binary, so there's no useful `git diff` - list which of the 9
    changed and which didn't. An unchanged GIF for a tape whose underlying
    output *did* change is worth flagging back to the user, since it usually
    means that particular tape doesn't exercise the changed code path.
