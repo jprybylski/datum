@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-08-04
+
 ### Added
 - `datum delete ID [ID ...]` removes a dataset's local files (a single file, or - for a
   directory-synced dataset - just the relative paths it owns, cleaning up any subdirectories left
