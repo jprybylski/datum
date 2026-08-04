@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-08-04
+
 ### Fixed
 - Multiple datasets can now target the same directory with the file handler's directory sync:
   previously, a second dataset fetching into a shared target directory would wipe out files the
