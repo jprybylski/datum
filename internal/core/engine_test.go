@@ -232,6 +232,101 @@ datasets:
 	})
 }
 
+// TestCheckFetch_OrphanedLockEntryPersists covers a dataset being removed from .data.yaml while
+// its lockfile entry survives. Neither Check nor Fetch ever deletes lockfile map entries - they
+// only read/mutate the entries for datasets still present in cfg.Datasets and write the whole map
+// back - so an orphaned entry (a dataset id with no corresponding config entry) is preserved
+// as-is indefinitely, without a config change ever pruning history the user might still want. This
+// is what makes `datum delete` + `datum undelete` safe to use across a config edit, and is the
+// same property a future `datum unlock` would need to explicitly opt out of.
+func TestCheckFetch_OrphanedLockEntryPersists(t *testing.T) {
+	tmpDir := t.TempDir()
+	target1 := filepath.Join(tmpDir, "orphan_target.txt")
+	target2 := filepath.Join(tmpDir, "kept_target.txt")
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	lockPath := filepath.Join(tmpDir, "lock.yaml")
+
+	twoDatasetConfig := `version: 1
+datasets:
+  - id: orphan_ds
+    source:
+      type: mock
+    target: ` + target1 + `
+    policy: update
+  - id: kept_ds
+    source:
+      type: mock
+    target: ` + target2 + `
+    policy: update
+`
+	mustWriteFile(t, configPath, []byte(twoDatasetConfig))
+
+	if code := Fetch(context.Background(), configPath, lockPath, nil, 1); code != 0 {
+		t.Fatalf("initial Fetch() = %d, want 0", code)
+	}
+
+	lkBefore, err := readLock(lockPath)
+	if err != nil {
+		t.Fatalf("readLock() error = %v", err)
+	}
+	orphanBefore := lkBefore.Items["orphan_ds"]
+	if orphanBefore == nil {
+		t.Fatal("orphan_ds should have a lock entry after the initial fetch")
+	}
+
+	// Rewrite the config with orphan_ds removed entirely, as if the user deleted it from
+	// .data.yaml by hand - datum should never see this dataset again.
+	oneDatasetConfig := `version: 1
+datasets:
+  - id: kept_ds
+    source:
+      type: mock
+    target: ` + target2 + `
+    policy: update
+`
+	mustWriteFile(t, configPath, []byte(oneDatasetConfig))
+
+	t.Run("check does not prune the orphaned entry", func(t *testing.T) {
+		if code := Check(context.Background(), configPath, lockPath, 1); code != 0 {
+			t.Fatalf("Check() after config removal = %d, want 0", code)
+		}
+		lk, err := readLock(lockPath)
+		if err != nil {
+			t.Fatalf("readLock() error = %v", err)
+		}
+		orphan := lk.Items["orphan_ds"]
+		if orphan == nil {
+			t.Fatal("orphan_ds's lock entry should still exist after Check(), even though it's no longer in .data.yaml")
+		}
+		if orphan.RemoteFingerprint != orphanBefore.RemoteFingerprint || orphan.LocalSHA256 != orphanBefore.LocalSHA256 {
+			t.Errorf("orphan_ds lock entry changed = %+v, want unchanged from %+v", orphan, orphanBefore)
+		}
+		if lk.Items["kept_ds"] == nil {
+			t.Error("kept_ds's lock entry should still exist")
+		}
+	})
+
+	t.Run("fetch does not prune the orphaned entry", func(t *testing.T) {
+		if code := Fetch(context.Background(), configPath, lockPath, nil, 1); code != 0 {
+			t.Fatalf("Fetch() after config removal = %d, want 0", code)
+		}
+		lk, err := readLock(lockPath)
+		if err != nil {
+			t.Fatalf("readLock() error = %v", err)
+		}
+		if lk.Items["orphan_ds"] == nil {
+			t.Fatal("orphan_ds's lock entry should still exist after Fetch(), even though it's no longer in .data.yaml")
+		}
+	})
+
+	// The orphaned target file itself is untouched too - Check/Fetch never delete local files for
+	// a dataset id that simply isn't mentioned in the config at all (contrast with `datum delete`,
+	// which is the explicit, confirmed way to remove them).
+	if _, err := os.Stat(target1); err != nil {
+		t.Errorf("orphan_ds's target file should be untouched: %v", err)
+	}
+}
+
 func TestFetch(t *testing.T) {
 	tmpDir := t.TempDir()
 

@@ -42,6 +42,14 @@ type LockItem struct {
 	// This lives in the lockfile rather than a sidecar file the handler writes to disk itself, so
 	// all of a dataset's tracked state stays in one place.
 	DirPaths []string `yaml:"dir_paths,omitempty"`
+
+	// Deleted marks that `datum delete` removed this dataset's local files on purpose. Check and
+	// Fetch skip any dataset whose lock item has Deleted set, rather than treating the missing
+	// target as something to re-fetch or fail on - `datum undelete` clears it. This lives in the
+	// lockfile (not .data.yaml) so the command never has to touch the user's config file.
+	Deleted bool `yaml:"deleted,omitempty"`
+	// DeletedAt records when `datum delete` ran, for the same reasons InaccessibleAt does.
+	DeletedAt *time.Time `yaml:"deleted_at,omitempty"`
 }
 
 // readLock loads the lockfile from disk.

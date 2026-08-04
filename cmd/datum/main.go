@@ -42,6 +42,10 @@ func usage() {
 Usage:
   datum [--config .data.yaml] [--lock .data.lock.yaml] [--timeout 5m] [--concurrency 1] [--no-color] [--json] check
   datum [--config .data.yaml] [--lock .data.lock.yaml] [--timeout 5m] [--concurrency 1] [--no-color] [--json] fetch [ID ...]
+  datum [--config .data.yaml] [--lock .data.lock.yaml] [--yes] delete ID [ID ...]
+  datum [--lock .data.lock.yaml] undelete ID [ID ...]
+  datum [--config .data.yaml] [--lock .data.lock.yaml] [--yes] unlock ID [ID ...]
+  datum [--config .data.yaml] [--lock .data.lock.yaml] [--no-color] [--json] audit
   datum --version
 `)
 }
@@ -67,6 +71,7 @@ func run(args []string) int {
 	var showVersion bool
 	var noColor bool
 	var jsonOutput bool
+	var yes bool
 	fs.StringVar(&cfgPath, "config", ".data.yaml", "path to config YAML")
 	fs.StringVar(&lockPath, "lock", ".data.lock.yaml", "path to lock YAML")
 	fs.DurationVar(&timeout, "timeout", 5*time.Minute, "overall timeout for the whole check/fetch run (e.g. 30s, 5m, 1h); 0 disables it")
@@ -74,6 +79,7 @@ func run(args []string) int {
 	fs.BoolVar(&showVersion, "version", false, "print the datum version and exit")
 	fs.BoolVar(&noColor, "no-color", false, "disable colored output (also honored via the NO_COLOR env var)")
 	fs.BoolVar(&jsonOutput, "json", false, "print results as a single JSON document instead of colorized text")
+	fs.BoolVar(&yes, "yes", false, "skip delete/unlock's confirmation prompt (for scripts/CI; has no effect on other commands)")
 
 	if err := fs.Parse(args); err != nil {
 		usage()
@@ -123,6 +129,25 @@ func run(args []string) int {
 		// fs.Args()[1:] skips the subcommand itself
 		ids := fs.Args()[1:]
 		return core.Fetch(ctx, cfgPath, lockPath, ids, concurrency)
+
+	case "delete":
+		// Remove tracked local files for the given IDs and mark them deleted in the lockfile
+		ids := fs.Args()[1:]
+		return core.Delete(cfgPath, lockPath, ids, yes, os.Stdin, os.Stdout)
+
+	case "undelete":
+		// Clear the deleted flag for the given IDs so check/fetch resume tracking them
+		ids := fs.Args()[1:]
+		return core.Undelete(lockPath, ids, os.Stdout)
+
+	case "unlock":
+		// Permanently forget lockfile state for the given IDs (config or orphaned)
+		ids := fs.Args()[1:]
+		return core.Unlock(cfgPath, lockPath, ids, yes, os.Stdin, os.Stdout)
+
+	case "audit":
+		// Report every dataset's config+lockfile state (ok/pending/deleted/orphaned)
+		return core.Audit(cfgPath, lockPath)
 
 	default:
 		// Unknown subcommand - show usage and exit
