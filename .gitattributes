@@ -1,0 +1,4 @@
+# The generated Go constant embeds this file byte-for-byte. Keep the authored schema canonical on
+# every platform so Windows checkouts and `go generate` produce the same bytes as Unix checkouts.
+data-schema.json text eol=lf
+schema_generated.go text eol=lf
