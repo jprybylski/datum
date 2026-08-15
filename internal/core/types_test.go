@@ -40,6 +40,28 @@ func TestTypesList(t *testing.T) {
 	}
 }
 
+func TestTypesPublicEntryPoint(t *testing.T) {
+	originalSpecs := loadSourceTypeSpecs
+	originalNames := registeredTypeNames
+	t.Cleanup(func() {
+		loadSourceTypeSpecs = originalSpecs
+		registeredTypeNames = originalNames
+	})
+	loadSourceTypeSpecs = func() ([]datum.SourceTypeSpec, error) {
+		return []datum.SourceTypeSpec{{Type: "mock", Description: "Registered test source"}}, nil
+	}
+	registeredTypeNames = func() []string { return []string{"mock"} }
+
+	out := captureStdout(t, func() {
+		if code := Types([]string{"mock"}); code != 0 {
+			t.Errorf("Types(mock) = %d, want 0", code)
+		}
+	})
+	if !strings.Contains(out, "Registered test source") {
+		t.Fatalf("Types(mock) output = %q", out)
+	}
+}
+
 func TestTypesDetails(t *testing.T) {
 	var out bytes.Buffer
 	if code := types([]string{"alpha", "beta"}, &out, testSpecs, testNames, testRegistered); code != 0 {

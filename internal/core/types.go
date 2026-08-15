@@ -10,13 +10,19 @@ import (
 	"github.com/jprybylski/datum/internal/registry"
 )
 
+var (
+	loadSourceTypeSpecs    = datum.SourceTypeSpecs
+	registeredTypeNames    = registry.Names
+	isSourceTypeRegistered = func(name string) bool {
+		_, ok := registry.Get(name)
+		return ok
+	}
+)
+
 // Types prints the source types available in this build. With no names it prints a compact list;
 // with names it prints the complete configuration fields for those types.
 func Types(names []string) int {
-	return types(names, os.Stdout, datum.SourceTypeSpecs, registry.Names, func(name string) bool {
-		_, ok := registry.Get(name)
-		return ok
-	})
+	return types(names, os.Stdout, loadSourceTypeSpecs, registeredTypeNames, isSourceTypeRegistered)
 }
 
 func types(

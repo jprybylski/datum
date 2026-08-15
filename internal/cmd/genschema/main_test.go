@@ -50,3 +50,44 @@ func TestRunReportsWriteError(t *testing.T) {
 		t.Fatalf("run(unwritable output) = %d, stderr = %q", code, stderr.String())
 	}
 }
+
+func TestMain(t *testing.T) {
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalExit := exitProcess
+	t.Cleanup(func() {
+		if err := os.Chdir(originalDir); err != nil {
+			t.Errorf("restore working directory: %v", err)
+		}
+		exitProcess = originalExit
+	})
+
+	t.Run("success", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "data-schema.json"), []byte("{}"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chdir(dir); err != nil {
+			t.Fatal(err)
+		}
+		main()
+		if _, err := os.Stat(filepath.Join(dir, "schema_generated.go")); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("failure", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.Chdir(dir); err != nil {
+			t.Fatal(err)
+		}
+		exitCode := 0
+		exitProcess = func(code int) { exitCode = code }
+		main()
+		if exitCode != 1 {
+			t.Fatalf("exit code = %d, want 1", exitCode)
+		}
+	})
+}

@@ -8,8 +8,12 @@ import (
 	"strconv"
 )
 
+var exitProcess = os.Exit
+
 func main() {
-	os.Exit(run("data-schema.json", "schema_generated.go", os.Stderr))
+	if code := run("data-schema.json", "schema_generated.go", os.Stderr); code != 0 {
+		exitProcess(code)
+	}
 }
 
 func run(inputPath, outputPath string, stderr io.Writer) int {
