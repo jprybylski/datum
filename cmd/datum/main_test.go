@@ -1,8 +1,11 @@
 package main
 
 import (
+	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jprybylski/datum/internal/core"
@@ -351,4 +354,80 @@ func TestRun_UnlockAudit(t *testing.T) {
 func TestUsage(t *testing.T) {
 	// Just make sure it doesn't panic; output content isn't load-bearing.
 	usage()
+}
+
+func TestRun_Types(t *testing.T) {
+	t.Run("lists source types available in this build", func(t *testing.T) {
+		out, code := captureRun(t, []string{"types"})
+		if code != 0 {
+			t.Fatalf("run(types) = %d, want 0", code)
+		}
+		for _, name := range []string{"command", "file", "http"} {
+			if !strings.Contains(out, name) {
+				t.Errorf("types output does not contain %q: %s", name, out)
+			}
+		}
+		if strings.Contains(out, "git-enabled builds") {
+			t.Errorf("types output includes optional git handler in a non-git build: %s", out)
+		}
+	})
+
+	t.Run("prints schema-derived details as JSON", func(t *testing.T) {
+		defer func() { core.JSONOutput = false }()
+		out, code := captureRun(t, []string{"--json", "types", "http"})
+		if code != 0 {
+			t.Fatalf("run(--json types http) = %d, want 0", code)
+		}
+		var report struct {
+			Types []struct {
+				Type   string `json:"type"`
+				Fields []struct {
+					Name     string `json:"name"`
+					Required bool   `json:"required"`
+				} `json:"fields"`
+			} `json:"types"`
+		}
+		if err := json.Unmarshal([]byte(out), &report); err != nil {
+			t.Fatalf("invalid JSON output: %v\n%s", err, out)
+		}
+		if len(report.Types) != 1 || report.Types[0].Type != "http" {
+			t.Fatalf("types = %+v, want only http", report.Types)
+		}
+		if len(report.Types[0].Fields) != 2 || report.Types[0].Fields[1].Name != "url" || !report.Types[0].Fields[1].Required {
+			t.Errorf("http fields = %+v, want required type and url from schema", report.Types[0].Fields)
+		}
+	})
+
+	t.Run("unknown source type exits 2", func(t *testing.T) {
+		out, code := captureRun(t, []string{"types", "bogus"})
+		if code != 2 {
+			t.Fatalf("run(types bogus) = %d, want 2", code)
+		}
+		if !strings.Contains(out, `unknown dataset source type "bogus"`) {
+			t.Errorf("unexpected error output: %s", out)
+		}
+	})
+}
+
+func captureRun(t *testing.T, args []string) (string, int) {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := os.Stdout
+	os.Stdout = w
+	code := run(args)
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = original
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return string(out), code
 }
