@@ -431,17 +431,26 @@ func captureRun(t *testing.T, args []string) (string, int) {
 	}
 	original := os.Stdout
 	os.Stdout = w
+	type readResult struct {
+		data []byte
+		err  error
+	}
+	readDone := make(chan readResult, 1)
+	go func() {
+		data, readErr := io.ReadAll(r)
+		readDone <- readResult{data: data, err: readErr}
+	}()
 	code := run(args)
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
 	}
 	os.Stdout = original
-	out, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatal(err)
-	}
+	result := <-readDone
 	if err := r.Close(); err != nil {
 		t.Fatal(err)
 	}
-	return string(out), code
+	if result.err != nil {
+		t.Fatal(result.err)
+	}
+	return string(result.data), code
 }

@@ -72,6 +72,11 @@ func TestMain(t *testing.T) {
 		if err := os.Chdir(dir); err != nil {
 			t.Fatal(err)
 		}
+		t.Cleanup(func() {
+			if err := os.Chdir(originalDir); err != nil {
+				t.Errorf("restore working directory: %v", err)
+			}
+		})
 		main()
 		if _, err := os.Stat(filepath.Join(dir, "schema_generated.go")); err != nil {
 			t.Fatal(err)
@@ -83,6 +88,11 @@ func TestMain(t *testing.T) {
 		if err := os.Chdir(dir); err != nil {
 			t.Fatal(err)
 		}
+		t.Cleanup(func() {
+			if err := os.Chdir(originalDir); err != nil {
+				t.Errorf("restore working directory: %v", err)
+			}
+		})
 		exitCode := 0
 		exitProcess = func(code int) { exitCode = code }
 		main()
