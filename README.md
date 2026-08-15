@@ -168,7 +168,8 @@ a JSON Schema (`data-schema.json`) for IDE autocomplete/validation. See
 
 ## Commands
 
-datum has six subcommands: `check`, `fetch`, `delete`, `undelete`, `unlock`, and `audit`. All
+datum has eight subcommands: `check`, `fetch`, `delete`, `undelete`, `unlock`, `audit`, `types`,
+and `schema`. All
 accept `--config`/`--lock` (only needed if yours aren't named the defaults); `check`/`fetch` also
 take `--timeout` (default `5m`, bounds the whole run) and `--concurrency` (default `1`,
 sequential). Every flag goes *before* the subcommand.
@@ -195,6 +196,13 @@ datum unlock dataset1
 
 # See what's tracked, pending, deleted, or orphaned across config + lockfile
 datum audit
+
+# List source types, or inspect the fields accepted by specific types
+datum types
+datum types http command
+
+# Print the configuration JSON Schema shipped with this version
+datum schema
 ```
 
 `check` exits `0` (up-to-date), `1` (changed/failed), or `2` (config error). Full flag reference

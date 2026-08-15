@@ -6,7 +6,8 @@ nav_order: 4
 
 # Commands
 
-datum has six subcommands: `check`, `fetch`, `delete`, `undelete`, `unlock`, and `audit`. All of
+datum has eight subcommands: `check`, `fetch`, `delete`, `undelete`, `unlock`, `audit`, `types`,
+and `schema`. All of
 them accept `--config` (default `.data.yaml`) and `--lock` (default `.data.lock.yaml`) - only
 needed if yours aren't named the defaults - with one exception: `undelete` only ever touches the
 lockfile, so it doesn't take `--config` at all.
@@ -201,6 +202,44 @@ judge it; that's what `check` is for.
 <img src="{{ '/assets/img/audit.gif' | relative_url }}" alt="Terminal recording of datum audit reporting ok, pending, deleted, and orphaned datasets after a fetch, a delete, and a config edit, followed by datum --json audit" width="600" loading="lazy">
 
 </details>
+
+## `datum types`
+
+Lists the dataset source types included in the current build. Pass one or more names to see every
+required and optional source field for those types. The optional `git` type only appears in builds
+that include Git support.
+
+```bash
+datum types
+datum types http file
+
+# Machine-readable output:
+datum --json types
+datum --json types command
+```
+
+`--no-color`, `NO_COLOR`, and `--json` are supported. An unknown type exits `2`; successful output
+exits `0`.
+
+<details markdown="1">
+<summary>🎬 Watch a live run</summary>
+
+<img src="{{ '/assets/img/types.gif' | relative_url }}" alt="Terminal recording of datum types listing the available source types, showing the fields for the HTTP type, and printing that type as JSON" width="600" loading="lazy">
+
+</details>
+
+## `datum schema`
+
+Prints the complete JSON Schema for `.data.yaml` to stdout. The output is the exact schema shipped
+inside that version of the binary, so it can be redirected to a file or consumed by another tool
+without depending on a network URL.
+
+```bash
+datum schema
+datum schema > data-schema.json
+```
+
+Successful output is always JSON and exits `0`; an output error exits `1`.
 
 Next: [Handlers]({{ '/handlers.html' | relative_url }}) for what each source type supports, or
 [Examples]({{ '/examples.html' | relative_url }}) to see full working configs.

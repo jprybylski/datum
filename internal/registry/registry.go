@@ -10,7 +10,10 @@
 //   - The Fetcher interface provides polymorphism - any type implementing these methods can be a handler
 package registry
 
-import "context"
+import (
+	"context"
+	"sort"
+)
 
 // Source represents the configuration for a data source.
 // It contains fields used by various handler types. Not all fields are used by all handlers.
@@ -94,4 +97,15 @@ func Register(f Fetcher) { fetchers[f.Name()] = f }
 func Get(kind string) (Fetcher, bool) {
 	f, ok := fetchers[kind]
 	return f, ok
+}
+
+// Names returns the source types available in this build, sorted for stable CLI output. Optional
+// handlers such as git only appear when their package was included by the build tags.
+func Names() []string {
+	names := make([]string, 0, len(fetchers))
+	for name := range fetchers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }

@@ -46,6 +46,8 @@ Usage:
   datum [--lock .data.lock.yaml] undelete ID [ID ...]
   datum [--config .data.yaml] [--lock .data.lock.yaml] [--yes] unlock ID [ID ...]
   datum [--config .data.yaml] [--lock .data.lock.yaml] [--no-color] [--json] audit
+  datum [--no-color] [--json] types [TYPE ...]
+  datum schema
   datum --version
 `)
 }
@@ -148,6 +150,14 @@ func run(args []string) int {
 	case "audit":
 		// Report every dataset's config+lockfile state (ok/pending/deleted/orphaned)
 		return core.Audit(cfgPath, lockPath)
+
+	case "types":
+		// List available source types, or show complete fields for selected types.
+		return core.Types(fs.Args()[1:])
+
+	case "schema":
+		// Print the exact configuration schema shipped with this build.
+		return core.Schema(os.Stdout)
 
 	default:
 		// Unknown subcommand - show usage and exit
