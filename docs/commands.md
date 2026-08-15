@@ -221,6 +221,13 @@ datum --json types command
 `--no-color`, `NO_COLOR`, and `--json` are supported. An unknown type exits `2`; successful output
 exits `0`.
 
+<details markdown="1">
+<summary>🎬 Watch a live run</summary>
+
+<img src="{{ '/assets/img/types.gif' | relative_url }}" alt="Terminal recording of datum types listing the available source types, showing the fields for the HTTP type, and printing that type as JSON" width="600" loading="lazy">
+
+</details>
+
 ## `datum schema`
 
 Prints the complete JSON Schema for `.data.yaml` to stdout. The output is the exact schema shipped

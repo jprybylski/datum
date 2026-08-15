@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-08-15
+
 ### Added
 - `datum types` lists the source types included in the current build; passing one or more type
   names shows their required and optional configuration fields. Supports `--json`, `--no-color`,
