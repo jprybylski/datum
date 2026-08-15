@@ -6,8 +6,8 @@ nav_order: 4
 
 # Commands
 
-datum has seven subcommands: `check`, `fetch`, `delete`, `undelete`, `unlock`, `audit`, and
-`types`. All of
+datum has eight subcommands: `check`, `fetch`, `delete`, `undelete`, `unlock`, `audit`, `types`,
+and `schema`. All of
 them accept `--config` (default `.data.yaml`) and `--lock` (default `.data.lock.yaml`) - only
 needed if yours aren't named the defaults - with one exception: `undelete` only ever touches the
 lockfile, so it doesn't take `--config` at all.
@@ -220,6 +220,19 @@ datum --json types command
 
 `--no-color`, `NO_COLOR`, and `--json` are supported. An unknown type exits `2`; successful output
 exits `0`.
+
+## `datum schema`
+
+Prints the complete JSON Schema for `.data.yaml` to stdout. The output is the exact schema shipped
+inside that version of the binary, so it can be redirected to a file or consumed by another tool
+without depending on a network URL.
+
+```bash
+datum schema
+datum schema > data-schema.json
+```
+
+Successful output is always JSON and exits `0`; an output error exits `1`.
 
 Next: [Handlers]({{ '/handlers.html' | relative_url }}) for what each source type supports, or
 [Examples]({{ '/examples.html' | relative_url }}) to see full working configs.

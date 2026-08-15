@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	datumlib "github.com/jprybylski/datum"
 	"github.com/jprybylski/datum/internal/core"
 )
 
@@ -407,6 +408,19 @@ func TestRun_Types(t *testing.T) {
 			t.Errorf("unexpected error output: %s", out)
 		}
 	})
+}
+
+func TestRun_Schema(t *testing.T) {
+	out, code := captureRun(t, []string{"schema"})
+	if code != 0 {
+		t.Fatalf("run(schema) = %d, want 0", code)
+	}
+	if out != string(datumlib.ConfigSchema()) {
+		t.Fatal("datum schema did not print the exact schema shipped with the binary")
+	}
+	if !json.Valid([]byte(out)) {
+		t.Fatal("datum schema output is not valid JSON")
+	}
 }
 
 func captureRun(t *testing.T, args []string) (string, int) {
