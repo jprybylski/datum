@@ -34,3 +34,36 @@ func TestSourceTypeSpecsComeFromSchema(t *testing.T) {
 		}
 	}
 }
+
+func TestSourceTypeSpecsInvalidJSON(t *testing.T) {
+	if _, err := sourceTypeSpecs([]byte("{")); err == nil {
+		t.Fatal("sourceTypeSpecs(invalid JSON) expected an error")
+	}
+}
+
+func TestSourceTypeSpecsSkipsNonSourceDefinitions(t *testing.T) {
+	schema := []byte(`{
+		"definitions": {
+			"missingType": {"properties": {"path": {"description": "path"}}},
+			"multipleTypes": {"properties": {"type": {"enum": ["one", "two"]}}},
+			"customSource": {
+				"description": "Custom source",
+				"required": ["type", "zebra"],
+				"properties": {
+					"type": {"enum": ["custom"]},
+					"zebra": {"description": "A custom field."}
+				}
+			}
+		}
+	}`)
+	specs, err := sourceTypeSpecs(schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(specs) != 1 || specs[0].Type != "custom" {
+		t.Fatalf("specs = %+v, want only custom", specs)
+	}
+	if len(specs[0].Fields) != 2 || specs[0].Fields[1].Name != "zebra" || !specs[0].Fields[1].Required {
+		t.Fatalf("custom fields = %+v", specs[0].Fields)
+	}
+}

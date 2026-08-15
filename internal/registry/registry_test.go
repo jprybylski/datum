@@ -2,6 +2,7 @@ package registry
 
 import (
 	"context"
+	"slices"
 	"testing"
 )
 
@@ -92,6 +93,19 @@ func TestGet(t *testing.T) {
 			t.Error("Get() ok = true, want false for non-existent handler")
 		}
 	})
+}
+
+func TestNames(t *testing.T) {
+	Register(&mockFetcher{name: "names-z"})
+	Register(&mockFetcher{name: "names-a"})
+
+	names := Names()
+	if !slices.IsSorted(names) {
+		t.Fatalf("Names() = %v, want sorted names", names)
+	}
+	if !slices.Contains(names, "names-a") || !slices.Contains(names, "names-z") {
+		t.Fatalf("Names() = %v, want newly registered handlers", names)
+	}
 }
 
 func TestSource(t *testing.T) {

@@ -44,13 +44,17 @@ type rawSchema struct {
 // SourceTypeSpecs derives the source-type reference from ConfigSchema, keeping the CLI and editor
 // validation contract on one source of truth.
 func SourceTypeSpecs() ([]SourceTypeSpec, error) {
+	return sourceTypeSpecs([]byte(configSchema))
+}
+
+func sourceTypeSpecs(schemaJSON []byte) ([]SourceTypeSpec, error) {
 	var schema rawSchema
-	if err := json.Unmarshal([]byte(configSchema), &schema); err != nil {
+	if err := json.Unmarshal(schemaJSON, &schema); err != nil {
 		return nil, fmt.Errorf("parse embedded configuration schema: %w", err)
 	}
 
 	specs := make([]SourceTypeSpec, 0, len(schema.Definitions))
-	for definitionName, definition := range schema.Definitions {
+	for _, definition := range schema.Definitions {
 		typeProperty, ok := definition.Properties["type"]
 		if !ok || len(typeProperty.Enum) != 1 {
 			continue
@@ -79,7 +83,6 @@ func SourceTypeSpecs() ([]SourceTypeSpec, error) {
 			})
 		}
 		specs = append(specs, spec)
-		_ = definitionName
 	}
 	sort.Slice(specs, func(i, j int) bool { return specs[i].Type < specs[j].Type })
 	return specs, nil
