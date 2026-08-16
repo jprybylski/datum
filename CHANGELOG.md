@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-08-16
+
 ### Added
 - `.data.yaml` string values support strict `${NAME}` environment-variable substitution, allowing
   secrets and machine-specific values to stay outside version control. Unset variables are config
