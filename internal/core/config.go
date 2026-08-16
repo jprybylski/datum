@@ -13,6 +13,7 @@ package core
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -87,9 +88,21 @@ func readConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
-	// Parse the YAML into a Config struct
+	// Parse into a YAML node first so environment values are substituted in scalar values, not
+	// in the YAML source text. This matters for secrets containing YAML-significant characters
+	// such as ':', '#', or newlines: they remain one value and cannot change the document's
+	// structure.
+	var document yaml.Node
+	if err := yaml.Unmarshal(b, &document); err != nil {
+		return nil, err
+	}
+	if err := expandEnvInYAML(&document); err != nil {
+		return nil, fmt.Errorf("expand environment variables: %w", err)
+	}
+
+	// Decode the expanded YAML into a Config struct.
 	var c Config
-	if err := yaml.Unmarshal(b, &c); err != nil {
+	if err := document.Decode(&c); err != nil {
 		return nil, err
 	}
 
@@ -111,6 +124,86 @@ func readConfig(path string) (*Config, error) {
 	}
 
 	return &c, nil
+}
+
+// expandEnvInYAML replaces ${NAME} references in YAML scalar values. Mapping keys are left
+// untouched so environment input cannot rename configuration fields. A doubled dollar sign
+// escapes a reference: $${NAME} becomes the literal ${NAME}.
+func expandEnvInYAML(node *yaml.Node) error {
+	if node.Kind == yaml.MappingNode {
+		for i := 1; i < len(node.Content); i += 2 {
+			if err := expandEnvInYAML(node.Content[i]); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if node.Kind == yaml.ScalarNode && node.Tag == "!!str" {
+		expanded, err := expandEnvValue(node.Value)
+		if err != nil {
+			return fmt.Errorf("line %d, column %d: %w", node.Line, node.Column, err)
+		}
+		node.Value = expanded
+		return nil
+	}
+	for _, child := range node.Content {
+		if err := expandEnvInYAML(child); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func expandEnvValue(value string) (string, error) {
+	var expanded strings.Builder
+	for i := 0; i < len(value); {
+		if value[i] != '$' || i+1 == len(value) {
+			expanded.WriteByte(value[i])
+			i++
+			continue
+		}
+		switch value[i+1] {
+		case '$':
+			expanded.WriteByte('$')
+			i += 2
+		case '{':
+			end := strings.IndexByte(value[i+2:], '}')
+			if end < 0 {
+				return "", fmt.Errorf("unterminated environment reference")
+			}
+			end += i + 2
+			name := value[i+2 : end]
+			if !validEnvName(name) {
+				return "", fmt.Errorf("invalid environment variable name %q", name)
+			}
+			replacement, ok := os.LookupEnv(name)
+			if !ok {
+				return "", fmt.Errorf("environment variable %q is not set", name)
+			}
+			expanded.WriteString(replacement)
+			i = end + 1
+		default:
+			expanded.WriteByte(value[i])
+			i++
+		}
+	}
+	return expanded.String(), nil
+}
+
+func validEnvName(name string) bool {
+	if name == "" || !isASCIILetter(name[0]) && name[0] != '_' {
+		return false
+	}
+	for i := 1; i < len(name); i++ {
+		if !isASCIILetter(name[i]) && (name[i] < '0' || name[i] > '9') && name[i] != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+func isASCIILetter(b byte) bool {
+	return b >= 'A' && b <= 'Z' || b >= 'a' && b <= 'z'
 }
 
 // validateDataset checks that a dataset has a valid source configuration.

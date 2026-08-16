@@ -166,6 +166,11 @@ Datum also supports listing multiple `sources:` per dataset with automatic order
 a JSON Schema (`data-schema.json`) for IDE autocomplete/validation. See
 [Configuration](https://jprybylski.github.io/datum/configuration.html) on the docs site for both.
 
+Configuration string values can use `${NAME}` environment references, so credentials and
+machine-specific paths do not need to be committed to YAML. Unset variables fail as configuration
+errors; use `$${NAME}` for a literal reference. See the configuration guide for the full behavior
+and security considerations.
+
 ## Commands
 
 datum has eight subcommands: `check`, `fetch`, `delete`, `undelete`, `unlock`, `audit`, `types`,
