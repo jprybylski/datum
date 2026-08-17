@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-08-16
+
+### Fixed
+- Updated `github.com/go-git/go-git/v5` to v5.19.2 to resolve two security vulnerabilities.
+
 ## [1.5.0] - 2026-08-16
 
 ### Added
