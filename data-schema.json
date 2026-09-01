@@ -27,13 +27,17 @@
           "description": "Hashing algorithm for fingerprints",
           "enum": ["sha256"],
           "default": "sha256"
+        },
+        "ignore": {
+          "type": "boolean",
+          "description": "Whether fetched targets should be ignored by a detected Git or SVN working copy",
+          "default": false
         }
       }
     },
     "datasets": {
       "type": "array",
       "description": "List of datasets to track",
-      "minItems": 1,
       "items": {
         "type": "object",
         "required": ["id", "desc", "target"],
@@ -101,6 +105,10 @@
             "type": "string",
             "description": "Override default policy for this dataset",
             "enum": ["fail", "update", "log"]
+          },
+          "ignore": {
+            "type": "boolean",
+            "description": "Override whether this target should be ignored by a detected Git or SVN working copy"
           }
         }
       }
@@ -122,6 +130,17 @@
           "format": "uri",
           "description": "HTTP or HTTPS URL to fetch data from",
           "pattern": "^https?://"
+        },
+        "headers": {
+          "type": "object",
+          "description": "Optional HTTP request headers",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "body": {
+          "type": "string",
+          "description": "Optional HTTP request body; a non-empty body uses POST instead of HEAD/GET"
         }
       },
       "additionalProperties": false

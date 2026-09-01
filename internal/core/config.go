@@ -40,6 +40,7 @@ type Config struct {
 type Defaults struct {
 	Policy string `yaml:"policy"` // Default policy: "fail", "update", or "log"
 	Algo   string `yaml:"algo"`   // Hash algorithm (currently only "sha256" is supported)
+	Ignore bool   `yaml:"ignore"` // Whether fetched targets should be ignored by a detected VCS
 }
 
 // Dataset represents a single external data source to track.
@@ -62,9 +63,19 @@ type Dataset struct {
 	ID      string            `yaml:"id"`                // Unique identifier for this dataset
 	Desc    string            `yaml:"desc"`              // Human-readable description
 	Target  string            `yaml:"target"`            // Local file path where data will be saved
-	Policy  string            `yaml:"policy"`            // Policy override (empty uses default)
+	Policy  string            `yaml:"policy,omitempty"`  // Policy override (empty uses default)
+	Ignore  *bool             `yaml:"ignore,omitempty"`  // VCS-ignore override (nil uses default)
 	Source  registry.Source   `yaml:"source,omitempty"`  // Single data source (backward compatible)
 	Sources []registry.Source `yaml:"sources,omitempty"` // Multiple data sources with fallback
+}
+
+// ShouldIgnore returns the dataset-level ignore setting when present, otherwise the configured
+// global default.
+func (ds *Dataset) ShouldIgnore(defaultValue bool) bool {
+	if ds.Ignore != nil {
+		return *ds.Ignore
+	}
+	return defaultValue
 }
 
 // readConfig loads and parses the configuration file from disk.

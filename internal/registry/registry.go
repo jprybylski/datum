@@ -21,10 +21,12 @@ import (
 // YAML tags control how this struct is serialized/deserialized from configuration files.
 // The `omitempty` tag means the field will be omitted from YAML if it's empty.
 type Source struct {
-	Type string `yaml:"type"`           // Handler type: "http", "file", "git", or "command"
-	URL  string `yaml:"url,omitempty"`  // URL for http and git handlers
-	Path string `yaml:"path,omitempty"` // File path for file and git handlers
-	Ref  string `yaml:"ref,omitempty"`  // Git ref (branch/tag) for git handler
+	Type    string            `yaml:"type"`              // Handler type: "http", "file", "git", or "command"
+	URL     string            `yaml:"url,omitempty"`     // URL for http and git handlers
+	Path    string            `yaml:"path,omitempty"`    // File path for file and git handlers
+	Ref     string            `yaml:"ref,omitempty"`     // Git ref (branch/tag) for git handler
+	Headers map[string]string `yaml:"headers,omitempty"` // HTTP request headers
+	Body    string            `yaml:"body,omitempty"`    // HTTP request body; a non-empty body implies POST
 
 	// Command handler specific fields
 	FingerprintCmd string `yaml:"fingerprint_cmd,omitempty"` // Command to compute fingerprint
@@ -51,6 +53,14 @@ type Fetcher interface {
 	// The dest parameter is the local file path where data should be written.
 	// Returns an error if the fetch operation fails.
 	Fetch(ctx context.Context, src Source, dest string) error
+}
+
+// FingerprintingFetcher is an optional interface for handlers that can derive the remote
+// fingerprint from the same response or operation used to fetch the target. It avoids a second
+// request and ensures the recorded fingerprint describes the bytes that were actually written.
+type FingerprintingFetcher interface {
+	Fetcher
+	FetchWithFingerprint(ctx context.Context, src Source, dest string) (fingerprint string, err error)
 }
 
 // DirManifestFetcher is an optional interface for handlers whose Fetch may populate a directory

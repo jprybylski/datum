@@ -115,6 +115,8 @@ func TestSource(t *testing.T) {
 			URL:            "http://example.com",
 			Path:           "/path/to/file",
 			Ref:            "main",
+			Headers:        map[string]string{"Authorization": "Bearer token"},
+			Body:           "query",
 			FingerprintCmd: "echo test",
 			FetchCmd:       "curl -o {{dest}} {{url}}",
 		}
@@ -130,6 +132,9 @@ func TestSource(t *testing.T) {
 		}
 		if src.Ref != "main" {
 			t.Errorf("Ref = %q, want %q", src.Ref, "main")
+		}
+		if src.Headers["Authorization"] != "Bearer token" || src.Body != "query" {
+			t.Errorf("HTTP request fields = %#v, %q", src.Headers, src.Body)
 		}
 		if src.FingerprintCmd != "echo test" {
 			t.Errorf("FingerprintCmd = %q, want %q", src.FingerprintCmd, "echo test")

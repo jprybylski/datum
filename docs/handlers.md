@@ -17,12 +17,28 @@ Fetches data from HTTP/HTTPS URLs.
 source:
   type: http
   url: https://example.com/data.json
+  headers:
+    Authorization: "Bearer ${API_TOKEN}"
+    Content-Type: application/json
+  body: '{"format":"json"}'
 ```
 
-**Fingerprinting strategy:**
+`headers` is an optional string-to-string map and is applied to every request, including the HEAD
+probe used for ordinary GET sources. A non-empty `body` changes the request to POST; without one,
+the existing HEAD/GET behavior is unchanged. Header and body values support normal `${NAME}`
+environment substitution, so credentials do not need to be committed.
+
+POST endpoints must be safe to repeat: both `check` and `fetch` execute the configured request.
+A fetch derives the fingerprint from the same response it writes, so it does not issue a second
+POST merely to fingerprint the result.
+
+**Fingerprinting strategy for ordinary GET sources:**
 1. Try HTTP HEAD request for ETag header (most efficient)
 2. Fall back to Last-Modified + Content-Length headers
 3. Fall back to SHA256 hash of content (downloads file)
+
+POST sources use the same metadata preference on the POST response itself, then hash that response
+when no useful metadata is present.
 
 ## File Handler (built-in)
 
