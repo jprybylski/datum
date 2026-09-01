@@ -6,14 +6,14 @@ nav_order: 4
 
 # Commands
 
-datum has eight subcommands: `check`, `fetch`, `delete`, `undelete`, `unlock`, `audit`, `types`,
-and `schema`. All of
+datum has nine subcommands: `check`, `fetch`, `delete`, `undelete`, `unlock`, `audit`, `types`,
+`schema`, and `init`. All of
 them accept `--config` (default `.data.yaml`) and `--lock` (default `.data.lock.yaml`) - only
 needed if yours aren't named the defaults - with one exception: `undelete` only ever touches the
 lockfile, so it doesn't take `--config` at all.
 
-Every flag goes *before* the subcommand (`datum --json check`, not `datum check --json`) - that's
-a `flag`-package rule, not a datum-specific one, but it trips people up.
+Global flags go *before* the subcommand (`datum --json check`, not `datum check --json`). The
+`init` command has its own dataset flags after the subcommand, as documented below.
 
 `check` and `fetch` additionally accept:
 
@@ -240,6 +240,49 @@ datum schema > data-schema.json
 ```
 
 Successful output is always JSON and exits `0`; an output error exits `1`.
+
+## `datum init`
+
+Creates a new configuration and optionally adds one basic HTTP or file dataset. It refuses to
+overwrite an existing config and does not create a lockfile.
+
+```bash
+datum init --id example --type http \
+  --source https://example.com/data.csv --target data/example.csv
+
+# Create a valid scaffold for tools that will add datasets later:
+datum init --empty
+
+# Global flags still precede the command; init-specific flags follow it:
+datum --config datasets.yaml init --id local --type file \
+  --source source.csv --target data/local.csv --policy update --ignore
+```
+
+`datum init` requires no command-line arguments in an interactive terminal. It first prompts for
+the configuration defaults (policy `fail` and VCS ignoring `false`), then asks whether to add an
+initial dataset, defaulting to no. Declining writes a valid no-dataset configuration. Accepting
+continues with prompts for dataset ID, source type, source URL/path, and target path; its optional
+description defaults to the dataset ID.
+
+For scripts or other noninteractive input, supply `--id`, `--type` (`http` or `file`), `--source`,
+and `--target`. The optional flags are `--desc`, `--policy`, and `--ignore`; none is required.
+
+Use `datum init --empty` when another tool will populate the configuration later. It writes the
+minimal schema-valid document `version: 1` plus `datasets: []`. This matches the empty document
+used by `datur`'s YAML editing functions. It may be combined with `--policy` and `--ignore` to set
+project defaults, but not with dataset-specific flags.
+
+<details markdown="1">
+<summary>🎬 Watch the default interactive initialization</summary>
+
+<img src="{{ '/assets/img/init.gif' | relative_url }}" alt="Terminal recording of datum init accepting the default policy and ignore settings, declining an initial dataset, writing a minimal .data.yaml, and datum audit accepting it" width="700" loading="lazy">
+
+</details>
+
+**Exit codes:**
+- `0` - Configuration created
+- `1` - File or VCS update failed
+- `2` - Invalid/missing input or the config already exists
 
 Next: [Handlers]({{ '/handlers.html' | relative_url }}) for what each source type supports, or
 [Examples]({{ '/examples.html' | relative_url }}) to see full working configs.

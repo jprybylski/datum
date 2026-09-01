@@ -118,6 +118,12 @@ func fetchAttempt(ctx context.Context, dest string, prevManifest []string, claim
 				return fetchResult{}, "fetch", err
 			}
 			manifest = m
+		} else if ff, ok := f.(registry.FingerprintingFetcher); ok {
+			fp, err := ff.FetchWithFingerprint(ctx, source, dest)
+			if err != nil {
+				return fetchResult{}, "fetch", err
+			}
+			return fetchResult{fp: fp}, "", nil
 		} else if err := f.Fetch(ctx, source, dest); err != nil {
 			return fetchResult{}, "fetch", err
 		}
@@ -255,6 +261,9 @@ func Check(ctx context.Context, cfgPath, lockPath string, concurrency int) int {
 	cfg, err := readConfig(cfgPath)
 	if err != nil {
 		return reportError("config error", err)
+	}
+	if err := reconcileIgnores(cfg); err != nil {
+		return reportError("ignore error", err)
 	}
 
 	// Load lockfile (or create empty one if it doesn't exist)
@@ -511,6 +520,9 @@ func Fetch(ctx context.Context, cfgPath, lockPath string, ids []string, concurre
 	cfg, err := readConfig(cfgPath)
 	if err != nil {
 		return reportError("config error", err)
+	}
+	if err := reconcileIgnores(cfg); err != nil {
+		return reportError("ignore error", err)
 	}
 
 	// Build a set of IDs to fetch (if specific IDs were requested)

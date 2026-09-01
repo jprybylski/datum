@@ -90,6 +90,9 @@ datasets:
     source:
       type: http
       url: "https://${DATUM_TEST_HOST}/data?token=${DATUM_TEST_SECRET}"
+      headers:
+        Authorization: "Bearer ${DATUM_TEST_SECRET}"
+      body: '{"token":"${DATUM_TEST_SECRET}"}'
     target: ${DATUM_TEST_TARGET}
   - id: shell_dataset
     desc: $PLAIN_IS_NOT_EXPANDED and $${LITERAL_REFERENCE}
@@ -112,6 +115,12 @@ datasets:
 	}
 	if got, want := cfg.Datasets[0].Source.URL, "https://example.com/data?token=token:with#yaml\nsignificance"; got != want {
 		t.Errorf("Source.URL = %q, want %q", got, want)
+	}
+	if got, want := cfg.Datasets[0].Source.Headers["Authorization"], "Bearer token:with#yaml\nsignificance"; got != want {
+		t.Errorf("Authorization = %q, want %q", got, want)
+	}
+	if got, want := cfg.Datasets[0].Source.Body, "{\"token\":\"token:with#yaml\nsignificance\"}"; got != want {
+		t.Errorf("Body = %q, want %q", got, want)
 	}
 	if got, want := cfg.Datasets[0].Target, "data/from-env.csv"; got != want {
 		t.Errorf("Target = %q, want %q", got, want)
@@ -196,6 +205,29 @@ func TestValidEnvName(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := validEnvName(tt.name); got != tt.want {
 				t.Errorf("validEnvName(%q) = %v, want %v", tt.name, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDatasetShouldIgnore(t *testing.T) {
+	trueValue, falseValue := true, false
+	tests := []struct {
+		name       string
+		override   *bool
+		defaultVal bool
+		want       bool
+	}{
+		{name: "inherits false", want: false},
+		{name: "inherits true", defaultVal: true, want: true},
+		{name: "enables", override: &trueValue, want: true},
+		{name: "disables", override: &falseValue, defaultVal: true, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ds := Dataset{Ignore: tt.override}
+			if got := ds.ShouldIgnore(tt.defaultVal); got != tt.want {
+				t.Errorf("ShouldIgnore(%v) = %v, want %v", tt.defaultVal, got, tt.want)
 			}
 		})
 	}

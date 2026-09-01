@@ -27,6 +27,26 @@ func (m *mockHandler) Fetch(ctx context.Context, src registry.Source, dest strin
 	return os.WriteFile(dest, []byte("mock data"), 0o644)
 }
 
+type fingerprintingHandler struct {
+	fingerprintCalls int
+	fetchCalls       int
+	combinedCalls    int
+}
+
+func (h *fingerprintingHandler) Name() string { return "fingerprinting" }
+func (h *fingerprintingHandler) Fingerprint(context.Context, registry.Source) (string, error) {
+	h.fingerprintCalls++
+	return "separate-fp", nil
+}
+func (h *fingerprintingHandler) Fetch(context.Context, registry.Source, string) error {
+	h.fetchCalls++
+	return nil
+}
+func (h *fingerprintingHandler) FetchWithFingerprint(_ context.Context, _ registry.Source, dest string) (string, error) {
+	h.combinedCalls++
+	return "combined-fp", os.WriteFile(dest, []byte("combined"), 0o644)
+}
+
 // Mock handler that always fails on fetch
 type mockFailHandler struct{}
 
@@ -43,6 +63,34 @@ func (m *mockFailHandler) Fetch(ctx context.Context, src registry.Source, dest s
 func init() {
 	registry.Register(&mockHandler{})
 	registry.Register(&mockFailHandler{})
+}
+
+func TestFetchAttemptUsesCombinedFetchAndFingerprint(t *testing.T) {
+	handler := &fingerprintingHandler{}
+	dest := filepath.Join(t.TempDir(), "target.txt")
+	result, label, err := fetchAttempt(context.Background(), dest, nil, nil)(handler, registry.Source{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.fp != "combined-fp" || label != "" {
+		t.Fatalf("result = %+v, label = %q", result, label)
+	}
+	if handler.combinedCalls != 1 || handler.fetchCalls != 0 || handler.fingerprintCalls != 0 {
+		t.Fatalf("call counts = combined:%d fetch:%d fingerprint:%d", handler.combinedCalls, handler.fetchCalls, handler.fingerprintCalls)
+	}
+}
+
+func TestCheckAndFetchAcceptEmptyConfiguration(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ".data.yaml")
+	lockPath := filepath.Join(dir, ".data.lock.yaml")
+	mustWriteFile(t, configPath, []byte("version: 1\ndatasets: []\n"))
+	if code := Fetch(context.Background(), configPath, lockPath, nil, 1); code != 0 {
+		t.Fatalf("Fetch(empty config) = %d", code)
+	}
+	if code := Check(context.Background(), configPath, lockPath, 1); code != 0 {
+		t.Fatalf("Check(empty config) = %d", code)
+	}
 }
 
 // mustWriteFile writes test fixture content, failing the test immediately if the write fails
