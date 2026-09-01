@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-09-01
+
+### Added
+- Global and per-dataset `ignore` settings manage Datum-owned Git and SVN ignore rules when Datum
+  runs inside a detected working copy, while remaining a no-op outside version control (#29).
+- Schema conformance tests keep `data-schema.json`, the embedded schema, and YAML decoder fields
+  synchronized (#30).
+- HTTP sources accept request headers and a body, including environment-expanded Bearer tokens;
+  a non-empty body uses POST and fetch fingerprints the response without a duplicate request (#31).
+- `datum init` interactively or noninteractively scaffolds a first HTTP or file dataset without
+  overwriting existing configuration (#32).
+
 ## [1.5.1] - 2026-08-16
 
 ### Fixed

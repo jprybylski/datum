@@ -15,6 +15,8 @@ import (
 	"os"
 	"time"
 
+	"golang.org/x/term"
+
 	"github.com/jprybylski/datum/internal/core"
 	// Side-effect imports: These imports don't use any exported symbols,
 	// but they run init() functions that register handlers with the registry.
@@ -48,6 +50,7 @@ Usage:
   datum [--config .data.yaml] [--lock .data.lock.yaml] [--no-color] [--json] audit
   datum [--no-color] [--json] types [TYPE ...]
   datum schema
+  datum [--config .data.yaml] init [--id ID] [--type http|file] [--source VALUE] [--target PATH] [--desc TEXT] [--policy fail|update|log] [--ignore]
   datum --version
 `)
 }
@@ -159,11 +162,43 @@ func run(args []string) int {
 		// Print the exact configuration schema shipped with this build.
 		return core.Schema(os.Stdout)
 
+	case "init":
+		return runInit(cfgPath, fs.Args()[1:])
+
 	default:
 		// Unknown subcommand - show usage and exit
 		usage()
 		return 2
 	}
+}
+
+func runInit(configPath string, args []string) int {
+	fs := flag.NewFlagSet("datum init", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	var options core.InitOptions
+	fs.StringVar(&options.ID, "id", "", "dataset identifier")
+	fs.StringVar(&options.Type, "type", "", "source type: http or file")
+	fs.StringVar(&options.Source, "source", "", "source URL or file path")
+	fs.StringVar(&options.Target, "target", "", "local target path")
+	fs.StringVar(&options.Desc, "desc", "", "dataset description")
+	fs.StringVar(&options.Policy, "policy", "", "default policy: fail, update, or log")
+	fs.BoolVar(&options.Ignore, "ignore", false, "ignore fetched targets in a detected VCS")
+	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
+		usage()
+		return 2
+	}
+	fs.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "desc":
+			options.DescSet = true
+		case "policy":
+			options.PolicySet = true
+		case "ignore":
+			options.IgnoreSet = true
+		}
+	})
+	interactive := term.IsTerminal(int(os.Stdin.Fd()))
+	return core.Init(configPath, options, os.Stdin, os.Stdout, interactive)
 }
 
 // main is the program entry point.

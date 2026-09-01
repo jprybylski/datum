@@ -6,14 +6,14 @@ nav_order: 4
 
 # Commands
 
-datum has eight subcommands: `check`, `fetch`, `delete`, `undelete`, `unlock`, `audit`, `types`,
-and `schema`. All of
+datum has nine subcommands: `check`, `fetch`, `delete`, `undelete`, `unlock`, `audit`, `types`,
+`schema`, and `init`. All of
 them accept `--config` (default `.data.yaml`) and `--lock` (default `.data.lock.yaml`) - only
 needed if yours aren't named the defaults - with one exception: `undelete` only ever touches the
 lockfile, so it doesn't take `--config` at all.
 
-Every flag goes *before* the subcommand (`datum --json check`, not `datum check --json`) - that's
-a `flag`-package rule, not a datum-specific one, but it trips people up.
+Global flags go *before* the subcommand (`datum --json check`, not `datum check --json`). The
+`init` command has its own dataset flags after the subcommand, as documented below.
 
 `check` and `fetch` additionally accept:
 
@@ -240,6 +240,30 @@ datum schema > data-schema.json
 ```
 
 Successful output is always JSON and exits `0`; an output error exits `1`.
+
+## `datum init`
+
+Creates a new configuration containing one basic HTTP or file dataset. It refuses to overwrite an
+existing config and does not create a lockfile.
+
+```bash
+datum init --id example --type http \
+  --source https://example.com/data.csv --target data/example.csv
+
+# Global flags still precede the command; init-specific flags follow it:
+datum --config datasets.yaml init --id local --type file \
+  --source source.csv --target data/local.csv --policy update --ignore
+```
+
+The init-specific flags are `--id`, `--type` (`http` or `file`), `--source`, `--target`,
+`--desc`, `--policy`, and `--ignore`. In a terminal, omitted fields are prompted for. In scripts,
+the four required flags (`--id`, `--type`, `--source`, and `--target`) must be supplied.
+Description defaults to the ID, policy defaults to `fail`, and VCS ignoring defaults to false.
+
+**Exit codes:**
+- `0` - Configuration created
+- `1` - File or VCS update failed
+- `2` - Invalid/missing input or the config already exists
 
 Next: [Handlers]({{ '/handlers.html' | relative_url }}) for what each source type supports, or
 [Examples]({{ '/examples.html' | relative_url }}) to see full working configs.

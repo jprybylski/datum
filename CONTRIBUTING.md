@@ -144,6 +144,10 @@ To add a new data source handler:
 
 6. **Consider build tags** if your handler has optional dependencies (like the git handler)
 
+When configuration fields change, edit `data-schema.json`, run `go generate .`, and include the
+updated `schema_generated.go`. Tests compare the schema with the YAML decoder structs and fail on
+field drift or a stale generated copy.
+
 ## Testing Guidelines
 
 ### Running Tests

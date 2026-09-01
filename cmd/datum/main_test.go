@@ -192,6 +192,31 @@ func TestRun(t *testing.T) {
 	})
 }
 
+func TestRunInit(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "generated.yaml")
+	code := run([]string{
+		"--config", configPath, "init",
+		"--id", "starter", "--type", "file", "--source", "source.csv",
+		"--target", "data/starter.csv", "--desc", "Starter data", "--policy", "log",
+	})
+	if code != 0 {
+		t.Fatalf("run(init) = %d", code)
+	}
+	content, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"id: starter", "type: file", "path: source.csv", "policy: log"} {
+		if !strings.Contains(string(content), want) {
+			t.Errorf("generated config missing %q:\n%s", want, content)
+		}
+	}
+	if code := run([]string{"--config", filepath.Join(dir, "missing.yaml"), "init", "--id", "incomplete"}); code != 2 {
+		t.Errorf("run(incomplete init) = %d, want 2", code)
+	}
+}
+
 func TestRun_DeleteUndelete(t *testing.T) {
 	t.Run("delete with --yes removes target and marks lockfile deleted", func(t *testing.T) {
 		tmpDir := t.TempDir()
@@ -394,7 +419,7 @@ func TestRun_Types(t *testing.T) {
 		if len(report.Types) != 1 || report.Types[0].Type != "http" {
 			t.Fatalf("types = %+v, want only http", report.Types)
 		}
-		if len(report.Types[0].Fields) != 2 || report.Types[0].Fields[1].Name != "url" || !report.Types[0].Fields[1].Required {
+		if len(report.Types[0].Fields) != 4 || report.Types[0].Fields[1].Name != "url" || !report.Types[0].Fields[1].Required {
 			t.Errorf("http fields = %+v, want required type and url from schema", report.Types[0].Fields)
 		}
 	})

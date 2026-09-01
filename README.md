@@ -146,6 +146,7 @@ version: 1                    # Config format version
 defaults:
   policy: fail                # Default policy for all datasets
   algo: sha256                # Hashing algorithm (currently only sha256)
+  ignore: false               # Ignore fetched targets when run in a known Git/SVN working copy
 
 datasets:
   - id: unique_identifier     # Unique ID for this dataset
@@ -155,6 +156,7 @@ datasets:
       url: https://...        # Handler-specific fields
     target: path/to/local/file.csv  # Where to save locally
     policy: update            # Override default policy (optional)
+    ignore: true              # Override the VCS ignore default (optional)
 ```
 
 **Policy options:**
@@ -173,11 +175,11 @@ and security considerations.
 
 ## Commands
 
-datum has eight subcommands: `check`, `fetch`, `delete`, `undelete`, `unlock`, `audit`, `types`,
-and `schema`. All
+datum has nine subcommands: `check`, `fetch`, `delete`, `undelete`, `unlock`, `audit`, `types`,
+`schema`, and `init`. All
 accept `--config`/`--lock` (only needed if yours aren't named the defaults); `check`/`fetch` also
 take `--timeout` (default `5m`, bounds the whole run) and `--concurrency` (default `1`,
-sequential). Every flag goes *before* the subcommand.
+sequential). Global flags go *before* the subcommand; `init`'s own dataset flags go after `init`.
 
 ```bash
 # Verify all datasets against their recorded fingerprints
@@ -208,6 +210,9 @@ datum types http command
 
 # Print the configuration JSON Schema shipped with this version
 datum schema
+
+# Scaffold a first HTTP or file dataset (omitted values are prompted for in a terminal)
+datum init --id example --type http --source https://example.com/data.csv --target data/example.csv
 ```
 
 `check` exits `0` (up-to-date), `1` (changed/failed), or `2` (config error). Full flag reference
@@ -221,7 +226,7 @@ source. Full config examples and fingerprinting details for each are on the
 
 | Handler | `source.type` | What it does |
 |---|---|---|
-| HTTP | `http` | Fetches a URL; fingerprints via ETag, then Last-Modified, then SHA256 |
+| HTTP | `http` | Fetches a URL with optional headers/body; fingerprints via ETag, then Last-Modified, then SHA256 |
 | File | `file` | Copies a local file - or, if `path` is a directory, syncs the whole tree (with deletion tracking) |
 | Command | `command` | Runs your own shell commands to fingerprint/fetch anything |
 | Git *(requires `-tags git`)* | `git` | Fetches one file from a git repo by branch or tag, over HTTPS or SSH |

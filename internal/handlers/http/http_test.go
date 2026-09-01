@@ -2,6 +2,9 @@ package http
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -117,6 +120,50 @@ func TestHandler_Fingerprint(t *testing.T) {
 			t.Error("Fingerprint() expected error for 404, got nil")
 		}
 	})
+
+	t.Run("configured headers are sent on HEAD", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if got := r.Header.Get("Authorization"); got != "Bearer secret" {
+				t.Errorf("Authorization = %q, want Bearer secret", got)
+			}
+			w.Header().Set("ETag", `"authenticated"`)
+		}))
+		defer server.Close()
+
+		fp, err := New().Fingerprint(ctx, registry.Source{
+			URL: server.URL, Headers: map[string]string{"Authorization": "Bearer secret"},
+		})
+		if err != nil || fp != `etag:"authenticated"` {
+			t.Fatalf("Fingerprint() = %q, %v", fp, err)
+		}
+	})
+
+	t.Run("body implies POST and hashes the response", func(t *testing.T) {
+		const response = "generated export"
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				t.Errorf("method = %s, want POST", r.Method)
+			}
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := string(body); got != `{"format":"csv"}` {
+				t.Errorf("body = %q", got)
+			}
+			_, _ = io.WriteString(w, response)
+		}))
+		defer server.Close()
+
+		fp, err := New().Fingerprint(ctx, registry.Source{URL: server.URL, Body: `{"format":"csv"}`})
+		if err != nil {
+			t.Fatal(err)
+		}
+		sum := sha256.Sum256([]byte(response))
+		if want := "sha256:" + hex.EncodeToString(sum[:]); fp != want {
+			t.Errorf("fingerprint = %q, want %q", fp, want)
+		}
+	})
 }
 
 func TestHandler_Fetch(t *testing.T) {
@@ -149,6 +196,31 @@ func TestHandler_Fetch(t *testing.T) {
 		}
 		if string(gotContent) != content {
 			t.Errorf("Fetch() content = %v, want %v", string(gotContent), content)
+		}
+	})
+
+	t.Run("POST fetch returns fingerprint without a second request", func(t *testing.T) {
+		requests := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requests++
+			if r.Method != http.MethodPost {
+				t.Errorf("method = %s, want POST", r.Method)
+			}
+			w.Header().Set("ETag", `"post-result"`)
+			_, _ = io.WriteString(w, "result")
+		}))
+		defer server.Close()
+
+		dest := filepath.Join(tmpDir, "post.txt")
+		fp, err := New().FetchWithFingerprint(ctx, registry.Source{URL: server.URL, Body: "query"}, dest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if requests != 1 {
+			t.Errorf("requests = %d, want 1", requests)
+		}
+		if fp != `etag:"post-result"` {
+			t.Errorf("fingerprint = %q", fp)
 		}
 	})
 

@@ -89,7 +89,7 @@ func sourceTypeSpecs(schemaJSON []byte) ([]SourceTypeSpec, error) {
 }
 
 func fieldRank(name string) string {
-	order := []string{"type", "url", "path", "ref", "fingerprint_cmd", "fetch_cmd"}
+	order := []string{"type", "url", "path", "ref", "headers", "body", "fingerprint_cmd", "fetch_cmd"}
 	for i, candidate := range order {
 		if name == candidate {
 			return fmt.Sprintf("%02d", i)

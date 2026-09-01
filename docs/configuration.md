@@ -53,6 +53,10 @@ The schema provides:
 - Documentation on hover
 - Handler-specific field validation based on `type`
 
+`data-schema.json` is the authored configuration contract. `go generate .` embeds that exact file
+in the binary, and tests fail if the generated copy is stale or if YAML fields in Datum's decoder
+and the schema drift apart.
+
 ## Environment Variables and Secrets
 
 Any YAML string value can reference an environment variable with `${NAME}`. Datum substitutes
@@ -98,6 +102,7 @@ version: 1                    # Config format version
 defaults:
   policy: fail                # Default policy for all datasets
   algo: sha256                # Hashing algorithm (currently only sha256)
+  ignore: false               # Ignore targets in a detected Git/SVN working copy
 
 datasets:
   - id: unique_identifier     # Unique ID for this dataset
@@ -107,7 +112,23 @@ datasets:
       url: https://...        # Handler-specific fields
     target: path/to/local/file.csv  # Where to save locally
     policy: update            # Override default policy (optional)
+    ignore: true              # Override defaults.ignore (optional)
 ```
+
+## Version-Control Ignore Rules
+
+Set `defaults.ignore: true` to ignore fetched targets globally, then use a dataset-level
+`ignore: false` when a particular target should remain visible to version control. The inverse
+also works: keep the default false and opt individual datasets in.
+
+Datum only manages ignore rules when it is run from inside a known working copy. In a Git
+repository it maintains a clearly marked block in the repository-root `.gitignore`; in an SVN
+working copy it maintains `svn:ignore` properties while tracking which entries belong to Datum.
+Running outside Git or SVN is a no-op even when `ignore` is true.
+
+Datum never untracks files. In a detected working copy, an ignored target must be untracked and
+inside that working copy. SVN additionally requires the target's parent directory to already be
+versioned so the ignore property can be applied precisely. These checks happen before a fetch.
 
 ## Multi-Source Configuration
 
