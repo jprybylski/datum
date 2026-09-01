@@ -211,8 +211,14 @@ datum types http command
 # Print the configuration JSON Schema shipped with this version
 datum schema
 
-# Scaffold a first HTTP or file dataset (omitted values are prompted for in a terminal)
+# Configure project defaults interactively, then optionally add a first dataset
+datum init
+
+# The same operation can be fully noninteractive for scripts
 datum init --id example --type http --source https://example.com/data.csv --target data/example.csv
+
+# Or create a schema-valid empty scaffold directly for datur or another config editor
+datum init --empty
 ```
 
 `check` exits `0` (up-to-date), `1` (changed/failed), or `2` (config error). Full flag reference

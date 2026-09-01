@@ -38,7 +38,7 @@ func TestInitNoninteractive(t *testing.T) {
 func TestInitInteractiveDefaults(t *testing.T) {
 	dir := enterTempDir(t)
 	configPath := filepath.Join(dir, "custom.yaml")
-	input := strings.NewReader("sample\nfile\nsource.csv\ndata/sample.csv\n\n\n yes \n")
+	input := strings.NewReader("\nyes\nyes\nsample\nfile\nsource.csv\ndata/sample.csv\n\n")
 	var out bytes.Buffer
 	if code := Init(configPath, InitOptions{}, input, &out, true); code != 0 {
 		t.Fatalf("Init() = %d, output = %q", code, out.String())
@@ -52,6 +52,75 @@ func TestInitInteractiveDefaults(t *testing.T) {
 	}
 	if cfg.Defaults.Policy != "fail" || !cfg.Defaults.Ignore {
 		t.Errorf("defaults = %+v", cfg.Defaults)
+	}
+}
+
+func TestInitInteractiveDefaultsToNoDatasets(t *testing.T) {
+	dir := enterTempDir(t)
+	configPath := filepath.Join(dir, ".data.yaml")
+	var out bytes.Buffer
+	if code := Init(configPath, InitOptions{}, strings.NewReader("\n\n\n"), &out, true); code != 0 {
+		t.Fatalf("Init() = %d, output = %q", code, out.String())
+	}
+	content, err := os.ReadFile(configPath)
+	if err != nil || string(content) != "version: 1\ndatasets: []\n" {
+		t.Fatalf("interactive empty config = %q, %v", content, err)
+	}
+	if !strings.Contains(out.String(), "Add an initial dataset? (y/N) [n]") {
+		t.Fatalf("interactive output did not ask about a dataset: %q", out.String())
+	}
+}
+
+func TestInitEmpty(t *testing.T) {
+	dir := enterTempDir(t)
+	configPath := filepath.Join(dir, ".data.yaml")
+	var out bytes.Buffer
+	if code := Init(configPath, InitOptions{Empty: true}, strings.NewReader(""), &out, false); code != 0 {
+		t.Fatalf("Init(--empty) = %d, output = %q", code, out.String())
+	}
+	content, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(content), "version: 1\ndatasets: []\n"; got != want {
+		t.Fatalf("empty config = %q, want %q", got, want)
+	}
+	cfg, err := readConfig(configPath)
+	if err != nil {
+		t.Fatalf("readConfig(empty scaffold): %v", err)
+	}
+	if len(cfg.Datasets) != 0 || cfg.Defaults.Policy != "fail" || cfg.Defaults.Algo != "sha256" {
+		t.Fatalf("parsed empty config = %+v", cfg)
+	}
+}
+
+func TestInitEmptyRejectsDatasetFlags(t *testing.T) {
+	dir := enterTempDir(t)
+	configPath := filepath.Join(dir, ".data.yaml")
+	var out bytes.Buffer
+	code := Init(configPath, InitOptions{Empty: true, ID: "extra"}, strings.NewReader(""), &out, false)
+	if code != 2 || !strings.Contains(out.String(), "cannot be combined") {
+		t.Fatalf("Init(--empty --id) = %d, output = %q", code, out.String())
+	}
+	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
+		t.Fatalf("invalid empty init created config: %v", err)
+	}
+}
+
+func TestInitEmptyCanSetDefaults(t *testing.T) {
+	dir := enterTempDir(t)
+	configPath := filepath.Join(dir, ".data.yaml")
+	var out bytes.Buffer
+	options := InitOptions{Empty: true, Policy: "update", Ignore: true, PolicySet: true, IgnoreSet: true}
+	if code := Init(configPath, options, strings.NewReader(""), &out, false); code != 0 {
+		t.Fatalf("Init(--empty with defaults) = %d, output = %q", code, out.String())
+	}
+	cfg, err := readConfig(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Datasets) != 0 || cfg.Defaults.Policy != "update" || !cfg.Defaults.Ignore {
+		t.Fatalf("empty config defaults = %+v, datasets = %d", cfg.Defaults, len(cfg.Datasets))
 	}
 }
 

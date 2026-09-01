@@ -50,7 +50,7 @@ Usage:
   datum [--config .data.yaml] [--lock .data.lock.yaml] [--no-color] [--json] audit
   datum [--no-color] [--json] types [TYPE ...]
   datum schema
-  datum [--config .data.yaml] init [--id ID] [--type http|file] [--source VALUE] [--target PATH] [--desc TEXT] [--policy fail|update|log] [--ignore]
+  datum [--config .data.yaml] init [--empty [--policy fail|update|log] [--ignore] | --id ID --type http|file --source VALUE --target PATH [--desc TEXT] [--policy fail|update|log] [--ignore]]
   datum --version
 `)
 }
@@ -183,6 +183,7 @@ func runInit(configPath string, args []string) int {
 	fs.StringVar(&options.Desc, "desc", "", "dataset description")
 	fs.StringVar(&options.Policy, "policy", "", "default policy: fail, update, or log")
 	fs.BoolVar(&options.Ignore, "ignore", false, "ignore fetched targets in a detected VCS")
+	fs.BoolVar(&options.Empty, "empty", false, "create a valid configuration with no datasets")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
 		usage()
 		return 2

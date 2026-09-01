@@ -80,6 +80,19 @@ func TestFetchAttemptUsesCombinedFetchAndFingerprint(t *testing.T) {
 	}
 }
 
+func TestCheckAndFetchAcceptEmptyConfiguration(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ".data.yaml")
+	lockPath := filepath.Join(dir, ".data.lock.yaml")
+	mustWriteFile(t, configPath, []byte("version: 1\ndatasets: []\n"))
+	if code := Fetch(context.Background(), configPath, lockPath, nil, 1); code != 0 {
+		t.Fatalf("Fetch(empty config) = %d", code)
+	}
+	if code := Check(context.Background(), configPath, lockPath, 1); code != 0 {
+		t.Fatalf("Check(empty config) = %d", code)
+	}
+}
+
 // mustWriteFile writes test fixture content, failing the test immediately if the write fails
 // rather than letting it surface later as a confusing "file not found" from whatever reads it.
 func mustWriteFile(t *testing.T, path string, data []byte) {

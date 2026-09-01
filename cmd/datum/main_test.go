@@ -215,6 +215,13 @@ func TestRunInit(t *testing.T) {
 	if code := run([]string{"--config", filepath.Join(dir, "missing.yaml"), "init", "--id", "incomplete"}); code != 2 {
 		t.Errorf("run(incomplete init) = %d, want 2", code)
 	}
+	emptyPath := filepath.Join(dir, "empty.yaml")
+	if code := run([]string{"--config", emptyPath, "init", "--empty"}); code != 0 {
+		t.Fatalf("run(init --empty) = %d", code)
+	}
+	if content, err := os.ReadFile(emptyPath); err != nil || string(content) != "version: 1\ndatasets: []\n" {
+		t.Fatalf("empty init content = %q, %v", content, err)
+	}
 }
 
 func TestRun_DeleteUndelete(t *testing.T) {

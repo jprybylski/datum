@@ -130,6 +130,21 @@ Datum never untracks files. In a detected working copy, an ignored target must b
 inside that working copy. SVN additionally requires the target's parent directory to already be
 versioned so the ignore property can be applied precisely. These checks happen before a fetch.
 
+## Empty Configuration
+
+An empty dataset list is valid, which allows configuration-management tools to initialize the
+file before adding the first dataset:
+
+```yaml
+version: 1
+datasets: []
+```
+
+Create this exact scaffold with `datum init --empty`, or run `datum init` interactively and decline
+to add an initial dataset. Its shape matches the empty document used by the `datur` R package's
+YAML manipulation functions. Supply `--policy` and/or `--ignore` with `--empty` when the scaffold
+should also record non-default project settings.
+
 ## Multi-Source Configuration
 
 Datum supports specifying multiple sources with automatic fallback. If the first source fails,

@@ -38,7 +38,6 @@
     "datasets": {
       "type": "array",
       "description": "List of datasets to track",
-      "minItems": 1,
       "items": {
         "type": "object",
         "required": ["id", "desc", "target"],

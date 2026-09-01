@@ -17,7 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - HTTP sources accept request headers and a body, including environment-expanded Bearer tokens;
   a non-empty body uses POST and fetch fingerprints the response without a duplicate request (#31).
 - `datum init` interactively or noninteractively scaffolds a first HTTP or file dataset without
-  overwriting existing configuration (#32).
+  overwriting existing configuration. An interactive run configures project defaults first and
+  makes the initial dataset optional. `datum init --empty` creates the same schema-valid
+  `datasets: []` scaffold directly, compatible with `datur`'s YAML editing tools (#32).
 
 ## [1.5.1] - 2026-08-16
 
