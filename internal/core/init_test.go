@@ -124,6 +124,112 @@ func TestInitEmptyCanSetDefaults(t *testing.T) {
 	}
 }
 
+func TestInitEmptyRejectsInvalidPolicy(t *testing.T) {
+	dir := enterTempDir(t)
+	configPath := filepath.Join(dir, ".data.yaml")
+	var out bytes.Buffer
+	options := InitOptions{Empty: true, Policy: "sometimes", PolicySet: true}
+	if code := Init(configPath, options, strings.NewReader(""), &out, false); code != 2 || !strings.Contains(out.String(), "--policy") {
+		t.Fatalf("Init(--empty invalid policy) = %d, output = %q", code, out.String())
+	}
+	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
+		t.Fatalf("invalid init created config: %v", err)
+	}
+}
+
+func TestWriteEmptyConfigReportsWriteFailure(t *testing.T) {
+	dir := enterTempDir(t)
+	blockingFile := filepath.Join(dir, "blocking")
+	if err := os.WriteFile(blockingFile, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	code := writeEmptyConfig(filepath.Join(blockingFile, ".data.yaml"), InitOptions{}, &out)
+	if code != 1 || !strings.Contains(out.String(), "write config") {
+		t.Fatalf("writeEmptyConfig(blocked path) = %d, output = %q", code, out.String())
+	}
+}
+
+func TestInitInteractiveWithAllValuesProvided(t *testing.T) {
+	dir := enterTempDir(t)
+	configPath := filepath.Join(dir, ".data.yaml")
+	var out bytes.Buffer
+	options := InitOptions{
+		ID: "provided", Type: "file", Source: "source.csv", Target: "data/provided.csv",
+		Desc: "Provided", Policy: "log", DescSet: true, PolicySet: true, IgnoreSet: true,
+	}
+	if code := Init(configPath, options, strings.NewReader(""), &out, true); code != 0 {
+		t.Fatalf("Init(prefilled interactive) = %d, output = %q", code, out.String())
+	}
+	if strings.Contains(out.String(), ": ") {
+		t.Fatalf("prefilled interactive init prompted unexpectedly: %q", out.String())
+	}
+	cfg, err := readConfig(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Datasets[0].Source.Path != "source.csv" || cfg.Defaults.Policy != "log" {
+		t.Fatalf("config = %+v", cfg)
+	}
+}
+
+func TestInitRejectsIgnorePreparationFailure(t *testing.T) {
+	dir := enterTempDir(t)
+	runCommand(t, "git", "init", "--quiet", dir)
+	if err := os.MkdirAll(filepath.Join(dir, "data"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "data", "tracked.csv"), []byte("tracked"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runCommand(t, "git", "-C", dir, "add", "data/tracked.csv")
+	configPath := filepath.Join(dir, ".data.yaml")
+	var out bytes.Buffer
+	options := InitOptions{
+		ID: "tracked", Type: "file", Source: "source.csv", Target: "data/tracked.csv",
+		Policy: "fail", Ignore: true, PolicySet: true, IgnoreSet: true,
+	}
+	if code := Init(configPath, options, strings.NewReader(""), &out, false); code != 2 || !strings.Contains(out.String(), "already tracked by Git") {
+		t.Fatalf("Init(tracked ignored target) = %d, output = %q", code, out.String())
+	}
+	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
+		t.Fatalf("failed init created config: %v", err)
+	}
+}
+
+func TestValidateInitOptions(t *testing.T) {
+	valid := InitOptions{ID: "valid_id-1", Type: "http", Source: "https://example.com", Target: "data.csv", Policy: "fail"}
+	if err := validateInitOptions(valid); err != nil {
+		t.Fatalf("valid options: %v", err)
+	}
+	for _, test := range []struct {
+		name string
+		edit func(*InitOptions)
+		want string
+	}{
+		{"invalid ID", func(o *InitOptions) { o.ID = "bad id" }, "--id"},
+		{"invalid type", func(o *InitOptions) { o.Type = "git" }, "--type"},
+		{"invalid policy", func(o *InitOptions) { o.Policy = "sometimes" }, "--policy"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			options := valid
+			test.edit(&options)
+			if err := validateInitOptions(options); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("validateInitOptions() = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestInitReportsConfigPathInspectionError(t *testing.T) {
+	dir := enterTempDir(t)
+	var out bytes.Buffer
+	code := Init(filepath.Join(dir, "bad\x00path"), InitOptions{Empty: true}, strings.NewReader(""), &out, false)
+	if code != 2 || !strings.Contains(out.String(), "inspect config path") {
+		t.Fatalf("Init(invalid path) = %d, output = %q", code, out.String())
+	}
+}
+
 func TestInitValidationAndExistingFile(t *testing.T) {
 	dir := enterTempDir(t)
 	configPath := filepath.Join(dir, ".data.yaml")

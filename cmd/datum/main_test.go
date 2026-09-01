@@ -222,6 +222,19 @@ func TestRunInit(t *testing.T) {
 	if content, err := os.ReadFile(emptyPath); err != nil || string(content) != "version: 1\ndatasets: []\n" {
 		t.Fatalf("empty init content = %q, %v", content, err)
 	}
+	ignoredEmptyPath := filepath.Join(dir, "ignored-empty.yaml")
+	if code := run([]string{"--config", ignoredEmptyPath, "init", "--empty", "--ignore"}); code != 0 {
+		t.Fatalf("run(init --empty --ignore) = %d", code)
+	}
+	if content, err := os.ReadFile(ignoredEmptyPath); err != nil || !strings.Contains(string(content), "ignore: true") {
+		t.Fatalf("ignored empty init content = %q, %v", content, err)
+	}
+	if code := run([]string{"init", "--unknown"}); code != 2 {
+		t.Errorf("run(init --unknown) = %d, want 2", code)
+	}
+	if code := run([]string{"init", "unexpected"}); code != 2 {
+		t.Errorf("run(init positional argument) = %d, want 2", code)
+	}
 }
 
 func TestRun_DeleteUndelete(t *testing.T) {

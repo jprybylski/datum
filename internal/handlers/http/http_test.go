@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jprybylski/datum/internal/registry"
@@ -274,3 +276,122 @@ func TestHandler_Fetch(t *testing.T) {
 		}
 	})
 }
+
+func TestHandler_RequestAndTransportErrors(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("invalid URLs", func(t *testing.T) {
+		h := New()
+		if _, err := h.Fingerprint(ctx, registry.Source{URL: "://invalid"}); err == nil {
+			t.Fatal("Fingerprint() accepted invalid URL")
+		}
+		if _, err := h.Fingerprint(ctx, registry.Source{URL: "://invalid", Body: "query"}); err == nil {
+			t.Fatal("Fingerprint(POST) accepted invalid URL")
+		}
+		if _, err := h.FetchWithFingerprint(ctx, registry.Source{URL: "://invalid"}, filepath.Join(t.TempDir(), "out")); err == nil {
+			t.Fatal("FetchWithFingerprint() accepted invalid URL")
+		}
+	})
+
+	t.Run("transport errors", func(t *testing.T) {
+		h := &handler{client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return nil, errors.New("transport failed")
+		})}}
+		if _, err := h.Fingerprint(ctx, registry.Source{URL: "https://example.com", Body: "query"}); err == nil || !strings.Contains(err.Error(), "transport failed") {
+			t.Fatalf("Fingerprint(transport error) = %v", err)
+		}
+		if _, err := h.FetchWithFingerprint(ctx, registry.Source{URL: "https://example.com"}, filepath.Join(t.TempDir(), "out")); err == nil || !strings.Contains(err.Error(), "transport failed") {
+			t.Fatalf("FetchWithFingerprint(transport error) = %v", err)
+		}
+	})
+
+	t.Run("HEAD response close error", func(t *testing.T) {
+		h := &handler{client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"ETag": []string{`"value"`}},
+				Body:       closeErrorBody{Reader: strings.NewReader("")},
+			}, nil
+		})}}
+		if _, err := h.Fingerprint(ctx, registry.Source{URL: "https://example.com"}); err == nil || !strings.Contains(err.Error(), "close failed") {
+			t.Fatalf("Fingerprint(close error) = %v", err)
+		}
+	})
+
+	t.Run("response read errors", func(t *testing.T) {
+		newHandler := func() *handler {
+			return &handler{client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: readErrorBody{}}, nil
+			})}}
+		}
+		if _, err := newHandler().Fingerprint(ctx, registry.Source{URL: "https://example.com", Body: "query"}); err == nil || !strings.Contains(err.Error(), "read failed") {
+			t.Fatalf("Fingerprint(read error) = %v", err)
+		}
+		dest := filepath.Join(t.TempDir(), "out")
+		if _, err := newHandler().FetchWithFingerprint(ctx, registry.Source{URL: "https://example.com"}, dest); err == nil || !strings.Contains(err.Error(), "read failed") {
+			t.Fatalf("FetchWithFingerprint(read error) = %v", err)
+		}
+		if _, err := os.Stat(dest + ".tmp"); !os.IsNotExist(err) {
+			t.Fatalf("failed fetch left temporary file: %v", err)
+		}
+	})
+}
+
+func TestHandler_FetchDestinationErrors(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "content")
+	}))
+	defer server.Close()
+	h := New()
+	src := registry.Source{URL: server.URL}
+
+	t.Run("create parent", func(t *testing.T) {
+		dir := t.TempDir()
+		blockingFile := filepath.Join(dir, "blocking")
+		if err := os.WriteFile(blockingFile, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := h.FetchWithFingerprint(context.Background(), src, filepath.Join(blockingFile, "out")); err == nil {
+			t.Fatal("FetchWithFingerprint() created a directory beneath a file")
+		}
+	})
+
+	t.Run("create temporary file", func(t *testing.T) {
+		dest := filepath.Join(t.TempDir(), "out")
+		if err := os.Mkdir(dest+".tmp", 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := h.FetchWithFingerprint(context.Background(), src, dest); err == nil {
+			t.Fatal("FetchWithFingerprint() replaced temporary directory")
+		}
+	})
+
+	t.Run("rename temporary file", func(t *testing.T) {
+		dest := filepath.Join(t.TempDir(), "out")
+		if err := os.Mkdir(dest, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dest, "keep"), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := h.FetchWithFingerprint(context.Background(), src, dest); err == nil {
+			t.Fatal("FetchWithFingerprint() renamed over a directory")
+		}
+		if _, err := os.Stat(dest + ".tmp"); !os.IsNotExist(err) {
+			t.Fatalf("rename failure left temporary file: %v", err)
+		}
+	})
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return fn(req) }
+
+type closeErrorBody struct{ io.Reader }
+
+func (closeErrorBody) Close() error { return errors.New("close failed") }
+
+type readErrorBody struct{}
+
+func (readErrorBody) Read([]byte) (int, error) { return 0, errors.New("read failed") }
+func (readErrorBody) Close() error             { return nil }
