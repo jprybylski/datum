@@ -101,6 +101,15 @@ func TestPrepareIgnorePlanDetectsSVNAndPropagatesErrors(t *testing.T) {
 	}
 }
 
+func TestPrepareIgnorePlanGetwdError(t *testing.T) {
+	original := getWorkingDirectory
+	t.Cleanup(func() { getWorkingDirectory = original })
+	getWorkingDirectory = func() (string, error) { return "", errors.New("getwd failed") }
+	if _, err := prepareIgnorePlan(ignoreTestConfig(false)); err == nil || !strings.Contains(err.Error(), "getwd failed") {
+		t.Fatalf("prepareIgnorePlan(getwd error) = %v", err)
+	}
+}
+
 func TestRunVCSCommandReportsCommandErrors(t *testing.T) {
 	if _, err := runVCSCommand(filepath.Join(t.TempDir(), "missing-vcs-command")); err == nil {
 		t.Fatal("runVCSCommand() hid an execution error")
@@ -491,6 +500,48 @@ func TestSetSVNPropertyAndPlanErrors(t *testing.T) {
 		t.Fatalf("plan.apply(second property) = %v", err)
 	}
 }
+
+func TestSetSVNPropertyTemporaryFileFailures(t *testing.T) {
+	original := createSVNTemp
+	t.Cleanup(func() { createSVNTemp = original })
+	for _, test := range []struct {
+		name      string
+		createErr error
+		writeErr  error
+		closeErr  error
+	}{
+		{"create", errors.New("create failed"), nil, nil},
+		{"write", nil, errors.New("write failed"), nil},
+		{"close", nil, nil, errors.New("close failed")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			createSVNTemp = func() (svnTempFile, error) {
+				if test.createErr != nil {
+					return nil, test.createErr
+				}
+				return fakeSVNTempFile{writeErr: test.writeErr, closeErr: test.closeErr}, nil
+			}
+			if err := setSVNProperty(t.TempDir(), "svn:ignore", []string{"file"}, false); err == nil || !strings.Contains(err.Error(), test.name+" failed") {
+				t.Fatalf("setSVNProperty() = %v", err)
+			}
+		})
+	}
+}
+
+type fakeSVNTempFile struct {
+	writeErr error
+	closeErr error
+}
+
+func (f fakeSVNTempFile) WriteString(value string) (int, error) {
+	if f.writeErr != nil {
+		return 0, f.writeErr
+	}
+	return len(value), nil
+}
+
+func (f fakeSVNTempFile) Close() error { return f.closeErr }
+func (f fakeSVNTempFile) Name() string { return "datum-test-temp" }
 
 func TestApplyIgnorePlanWrapsErrors(t *testing.T) {
 	dir := t.TempDir()

@@ -16,6 +16,13 @@ import (
 
 var datasetIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
+var (
+	marshalConfig = yaml.Marshal
+	writeConfig   = atomicWrite
+	prepareIgnore = prepareIgnorePlan
+	applyIgnore   = applyIgnorePlan
+)
+
 // InitOptions contains values accepted by datum init. The Set fields distinguish omitted flags
 // from explicit empty/false values when deciding which terminal prompts to show.
 type InitOptions struct {
@@ -89,21 +96,21 @@ func Init(configPath string, options InitOptions, in io.Reader, out io.Writer, i
 			ID: options.ID, Desc: options.Desc, Source: source, Target: options.Target,
 		}},
 	}
-	ignorePlan, err := prepareIgnorePlan(cfg)
+	ignorePlan, err := prepareIgnore(cfg)
 	if err != nil {
 		fmt.Fprintf(out, "init error: prepare ignore rules: %v\n", err)
 		return 2
 	}
-	data, err := yaml.Marshal(cfg)
+	data, err := marshalConfig(cfg)
 	if err != nil {
 		fmt.Fprintf(out, "init error: encode config: %v\n", err)
 		return 1
 	}
-	if err := atomicWrite(configPath, data, 0o644); err != nil {
+	if err := writeConfig(configPath, data, 0o644); err != nil {
 		fmt.Fprintf(out, "init error: write config: %v\n", err)
 		return 1
 	}
-	if err := applyIgnorePlan(ignorePlan); err != nil {
+	if err := applyIgnore(ignorePlan); err != nil {
 		if removeErr := os.Remove(configPath); removeErr != nil {
 			fmt.Fprintf(out, "init error: apply ignore rules: %v (also could not remove config: %v)\n", err, removeErr)
 		} else {
@@ -132,12 +139,12 @@ func writeEmptyConfig(configPath string, options InitOptions, out io.Writer) int
 	if options.PolicySet || options.IgnoreSet || options.Policy != "fail" || options.Ignore {
 		document.Defaults = &Defaults{Policy: options.Policy, Algo: "sha256", Ignore: options.Ignore}
 	}
-	data, err := yaml.Marshal(document)
+	data, err := marshalConfig(document)
 	if err != nil {
 		fmt.Fprintf(out, "init error: encode config: %v\n", err)
 		return 1
 	}
-	if err := atomicWrite(configPath, data, 0o644); err != nil {
+	if err := writeConfig(configPath, data, 0o644); err != nil {
 		fmt.Fprintf(out, "init error: write config: %v\n", err)
 		return 1
 	}

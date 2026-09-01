@@ -2,10 +2,13 @@ package core
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestInitNoninteractive(t *testing.T) {
@@ -227,6 +230,54 @@ func TestInitReportsConfigPathInspectionError(t *testing.T) {
 	code := Init(filepath.Join(dir, "bad\x00path"), InitOptions{Empty: true}, strings.NewReader(""), &out, false)
 	if code != 2 || !strings.Contains(out.String(), "inspect config path") {
 		t.Fatalf("Init(invalid path) = %d, output = %q", code, out.String())
+	}
+}
+
+func TestInitInjectedFailurePaths(t *testing.T) {
+	options := InitOptions{ID: "example", Type: "file", Source: "source.csv", Target: "data/example.csv", Policy: "fail", PolicySet: true}
+	for _, test := range []struct {
+		name  string
+		setup func()
+		want  int
+	}{
+		{"prepare ignore", func() {
+			prepareIgnore = func(*Config) (*ignorePlan, error) { return nil, errors.New("prepare failed") }
+		}, 2},
+		{"marshal", func() { marshalConfig = func(any) ([]byte, error) { return nil, errors.New("marshal failed") } }, 1},
+		{"write", func() { writeConfig = func(string, []byte, os.FileMode) error { return errors.New("write failed") } }, 1},
+		{"apply ignore", func() { applyIgnore = func(*ignorePlan) error { return errors.New("apply failed") } }, 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			prepareIgnore, marshalConfig, writeConfig, applyIgnore = prepareIgnorePlan, yaml.Marshal, atomicWrite, applyIgnorePlan
+			t.Cleanup(func() {
+				prepareIgnore, marshalConfig, writeConfig, applyIgnore = prepareIgnorePlan, yaml.Marshal, atomicWrite, applyIgnorePlan
+			})
+			test.setup()
+			var out bytes.Buffer
+			if got := Init(filepath.Join(t.TempDir(), "config.yaml"), options, strings.NewReader(""), &out, false); got != test.want {
+				t.Fatalf("Init() = %d, output = %q, want %d", got, out.String(), test.want)
+			}
+		})
+	}
+}
+
+func TestInitEmptyInjectedFailurePaths(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		setup func()
+	}{
+		{"marshal", func() { marshalConfig = func(any) ([]byte, error) { return nil, errors.New("marshal failed") } }},
+		{"write", func() { writeConfig = func(string, []byte, os.FileMode) error { return errors.New("write failed") } }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			marshalConfig, writeConfig = yaml.Marshal, atomicWrite
+			t.Cleanup(func() { marshalConfig, writeConfig = yaml.Marshal, atomicWrite })
+			test.setup()
+			var out bytes.Buffer
+			if got := Init(filepath.Join(t.TempDir(), "config.yaml"), InitOptions{Empty: true}, strings.NewReader(""), &out, false); got != 1 {
+				t.Fatalf("Init(--empty) = %d, output = %q", got, out.String())
+			}
+		})
 	}
 }
 

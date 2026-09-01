@@ -18,6 +18,13 @@ import (
 
 type handler struct{ client *http.Client }
 
+type outputFile interface {
+	io.Writer
+	Close() error
+}
+
+var createOutputFile = func(path string) (outputFile, error) { return os.Create(path) }
+
 func New() *handler             { return &handler{client: &http.Client{Timeout: 60 * time.Second}} }
 func (h *handler) Name() string { return "http" }
 
@@ -103,7 +110,7 @@ func (h *handler) FetchWithFingerprint(ctx context.Context, src registry.Source,
 		return "", err
 	}
 	tmp := dest + ".tmp"
-	f, err := os.Create(tmp)
+	f, err := createOutputFile(tmp)
 	if err != nil {
 		return "", err
 	}

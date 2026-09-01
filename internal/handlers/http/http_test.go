@@ -334,6 +334,18 @@ func TestHandler_RequestAndTransportErrors(t *testing.T) {
 		}
 	})
 
+	t.Run("destination close error", func(t *testing.T) {
+		original := createOutputFile
+		t.Cleanup(func() { createOutputFile = original })
+		createOutputFile = func(string) (outputFile, error) { return closeErrorOutputFile{}, nil }
+		h := &handler{client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("content"))}, nil
+		})}}
+		if _, err := h.FetchWithFingerprint(ctx, registry.Source{URL: "https://example.com"}, filepath.Join(t.TempDir(), "out")); err == nil || !strings.Contains(err.Error(), "close failed") {
+			t.Fatalf("FetchWithFingerprint(close error) = %v", err)
+		}
+	})
+
 	t.Run("response read errors", func(t *testing.T) {
 		newHandler := func() *handler {
 			return &handler{client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
@@ -411,3 +423,8 @@ type readErrorBody struct{}
 
 func (readErrorBody) Read([]byte) (int, error) { return 0, errors.New("read failed") }
 func (readErrorBody) Close() error             { return nil }
+
+type closeErrorOutputFile struct{}
+
+func (closeErrorOutputFile) Write(value []byte) (int, error) { return len(value), nil }
+func (closeErrorOutputFile) Close() error                    { return errors.New("close failed") }

@@ -29,6 +29,8 @@ var runVCSCommand vcsCommand = func(name string, args ...string) ([]byte, error)
 	return output, nil
 }
 
+var getWorkingDirectory = os.Getwd
+
 type ignorePlan struct {
 	git *gitIgnorePlan
 	svn *svnIgnorePlan
@@ -59,7 +61,7 @@ func applyIgnorePlan(plan *ignorePlan) error {
 }
 
 func prepareIgnorePlan(cfg *Config) (*ignorePlan, error) {
-	cwd, err := os.Getwd()
+	cwd, err := getWorkingDirectory()
 	if err != nil {
 		return nil, err
 	}
@@ -252,6 +254,16 @@ type svnPropertyUpdate struct {
 
 type svnIgnorePlan struct{ updates []svnPropertyUpdate }
 
+type svnTempFile interface {
+	WriteString(string) (int, error)
+	Close() error
+	Name() string
+}
+
+var createSVNTemp = func() (svnTempFile, error) {
+	return os.CreateTemp("", "datum-svn-ignore-*")
+}
+
 func prepareSVNIgnore(root, cwd string, cfg *Config) (*svnIgnorePlan, error) {
 	existingOwned, err := svnPropertyMap(root, svnOwnedProp, true)
 	if err != nil {
@@ -377,7 +389,7 @@ func setSVNProperty(dir, property string, values []string, existed bool) error {
 		_, err := runVCSCommand("svn", "propdel", property, dir)
 		return err
 	}
-	tmp, err := os.CreateTemp("", "datum-svn-ignore-*")
+	tmp, err := createSVNTemp()
 	if err != nil {
 		return err
 	}
