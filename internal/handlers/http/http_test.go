@@ -166,6 +166,22 @@ func TestHandler_Fingerprint(t *testing.T) {
 			t.Errorf("fingerprint = %q, want %q", fp, want)
 		}
 	})
+
+	t.Run("body POST uses response header fingerprint", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				t.Errorf("method = %s, want POST", r.Method)
+			}
+			w.Header().Set("ETag", `"post-etag"`)
+			_, _ = io.WriteString(w, "ignored body")
+		}))
+		defer server.Close()
+
+		fp, err := New().Fingerprint(ctx, registry.Source{URL: server.URL, Body: "query"})
+		if err != nil || fp != `etag:"post-etag"` {
+			t.Fatalf("Fingerprint(POST header) = %q, %v", fp, err)
+		}
+	})
 }
 
 func TestHandler_Fetch(t *testing.T) {

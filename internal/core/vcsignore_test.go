@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -100,6 +101,12 @@ func TestPrepareIgnorePlanDetectsSVNAndPropagatesErrors(t *testing.T) {
 	}
 }
 
+func TestRunVCSCommandReportsCommandErrors(t *testing.T) {
+	if _, err := runVCSCommand(filepath.Join(t.TempDir(), "missing-vcs-command")); err == nil {
+		t.Fatal("runVCSCommand() hid an execution error")
+	}
+}
+
 func TestReconcileGitIgnore(t *testing.T) {
 	dir := enterTempDir(t)
 	runCommand(t, "git", "init", "--quiet", dir)
@@ -180,7 +187,7 @@ func TestPrepareGitIgnoreFailuresAndMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.mode != 0o600 {
+	if runtime.GOOS != "windows" && plan.mode != 0o600 {
 		t.Fatalf("gitignore mode = %o, want 600", plan.mode)
 	}
 	if err := os.WriteFile(ignorePath, []byte(gitIgnoreBegin+"\n"), 0o600); err != nil {
@@ -188,6 +195,25 @@ func TestPrepareGitIgnoreFailuresAndMode(t *testing.T) {
 	}
 	if _, err := prepareGitIgnore(dir, dir, ignoreTestConfig(true)); err == nil {
 		t.Fatal("prepareGitIgnore() accepted malformed managed block")
+	}
+
+	if err := os.Remove(ignorePath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := prepareGitIgnore(dir, dir, ignoreTestConfig(false)); err != nil {
+		t.Fatalf("prepareGitIgnore(no entries) = %v", err)
+	}
+	outside := ignoreTestConfig(true)
+	outside.Datasets[0].Target = filepath.Join(dir, "..", "outside.csv")
+	if _, err := prepareGitIgnore(dir, dir, outside); err == nil || !strings.Contains(err.Error(), "outside the version-control root") {
+		t.Fatalf("prepareGitIgnore(outside target) = %v", err)
+	}
+
+	if err := os.Mkdir(ignorePath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := prepareGitIgnore(dir, dir, ignoreTestConfig(false)); err == nil {
+		t.Fatal("prepareGitIgnore() read a directory as .gitignore")
 	}
 }
 
@@ -381,6 +407,49 @@ func TestPrepareSVNIgnoreRejectsUnsafeTargets(t *testing.T) {
 			}
 		})
 	}
+
+	outside := ignoreTestConfig(true)
+	outside.Datasets[0].Target = filepath.Join(dir, "..", "outside.csv")
+	runVCSCommand = func(_ string, args ...string) ([]byte, error) {
+		if args[0] == "propget" {
+			return propertyXML, nil
+		}
+		return nil, errors.New("not versioned")
+	}
+	if _, err := prepareSVNIgnore(dir, dir, outside); err == nil || !strings.Contains(err.Error(), "outside the version-control root") {
+		t.Fatalf("prepareSVNIgnore(outside target) = %v", err)
+	}
+}
+
+func TestPrepareSVNIgnoreCurrentPropertyError(t *testing.T) {
+	dir := t.TempDir()
+	dataDir := filepath.Join(dir, "data")
+	infoCalls := 0
+	original := runVCSCommand
+	t.Cleanup(func() { runVCSCommand = original })
+	runVCSCommand = func(_ string, args ...string) ([]byte, error) {
+		switch args[0] {
+		case "propget":
+			if args[1] == svnOwnedProp {
+				return []byte(`<?xml version="1.0"?><properties></properties>`), nil
+			}
+			return nil, errors.New("property read failed")
+		case "info":
+			infoCalls++
+			if infoCalls == 1 && filepath.Clean(args[1]) == dataDir {
+				return []byte("versioned"), nil
+			}
+			if infoCalls == 3 {
+				return nil, errors.New("property read failed")
+			}
+			return nil, errors.New("not versioned")
+		default:
+			return nil, errors.New("unexpected command")
+		}
+	}
+	if _, err := prepareSVNIgnore(dir, dir, ignoreTestConfig(true)); err == nil || !strings.Contains(err.Error(), "property read failed") {
+		t.Fatalf("prepareSVNIgnore(property error) = %v", err)
+	}
 }
 
 func TestSetSVNPropertyAndPlanErrors(t *testing.T) {
@@ -440,6 +509,34 @@ func TestApplyIgnorePlanWrapsErrors(t *testing.T) {
 	plan = &ignorePlan{svn: &svnIgnorePlan{updates: []svnPropertyUpdate{{dir: dir, ignore: []string{"x"}}}}}
 	if err := applyIgnorePlan(plan); err == nil || !strings.Contains(err.Error(), "update SVN") {
 		t.Fatalf("applyIgnorePlan(svn) = %v", err)
+	}
+}
+
+func TestAtomicWriteErrors(t *testing.T) {
+	dir := t.TempDir()
+	blocking := filepath.Join(dir, "blocking")
+	if err := os.WriteFile(blocking, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := atomicWrite(filepath.Join(blocking, "nested"), []byte("x"), 0o644); err == nil {
+		t.Fatal("atomicWrite() succeeded beneath a regular file")
+	}
+
+	path := filepath.Join(dir, "output")
+	if err := os.Mkdir(path+".tmp", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := atomicWrite(path, []byte("x"), 0o644); err == nil {
+		t.Fatal("atomicWrite() wrote through a temporary directory")
+	}
+	if err := os.Remove(path + ".tmp"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := atomicWrite(path, []byte("x"), 0o644); err == nil {
+		t.Fatal("atomicWrite() renamed over a directory")
 	}
 }
 
