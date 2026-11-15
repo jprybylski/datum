@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"time"
 )
@@ -32,10 +33,35 @@ type AuditEntry struct {
 	InaccessibleAt    *time.Time  `json:"inaccessible_at,omitempty"`
 	InaccessibleError string      `json:"inaccessible_error,omitempty"`
 	Note              string      `json:"note,omitempty"`
+
+	// Drift is set by --verify-local for tracked datasets: "ok" when the local target still
+	// matches the lockfile, "changed", "missing", or "unknown" when the lockfile has no hash
+	// to compare with (#41).
+	Drift string `json:"drift,omitempty"`
+	// Files is set by --verify-local for directory targets whose lockfile records per-file
+	// hashes: each recorded file and whether it still matches.
+	Files []AuditFile `json:"files,omitempty"`
+}
+
+// Drift values reported by audit --verify-local.
+const (
+	DriftOK      = "ok"
+	DriftChanged = "changed"
+	DriftMissing = "missing"
+	DriftUnknown = "unknown"
+)
+
+// AuditFile is one recorded file of a directory target, as reported by audit --verify-local.
+type AuditFile struct {
+	Path   string `json:"path"`
+	SHA256 string `json:"sha256"`
+	Size   int64  `json:"size"`
+	Drift  string `json:"drift"`
 }
 
 // AuditReport is the single top-level JSON document `datum audit --json` prints to stdout.
 type AuditReport struct {
+	Format  string       `json:"format"`
 	Entries []AuditEntry `json:"entries"`
 }
 
@@ -52,7 +78,14 @@ type AuditReport struct {
 // Returns 0 always (audit doesn't fail on what it finds - that's what `check` is for), or 2 if
 // the config or lockfile can't be loaded.
 func Audit(cfgPath, lockPath string) int {
-	cfg, err := readConfig(cfgPath)
+	return AuditWith(cfgPath, lockPath, Options{})
+}
+
+// AuditWith is Audit with the options in opts. It never needs a source's ${NAME} variables: a
+// reference to an unset variable is shown as written (#42). With opts.VerifyLocal it also hashes
+// each tracked local target and reports drift against the lockfile (#41).
+func AuditWith(cfgPath, lockPath string, opts Options) int {
+	cfg, info, err := loadConfig(cfgPath, lockPath, opts, scopeAllLenient)
 	if err != nil {
 		return reportError("config error", err)
 	}
@@ -61,12 +94,25 @@ func Audit(cfgPath, lockPath string) int {
 		return reportError("lock error", err)
 	}
 
-	var entries []AuditEntry
+	entries := []AuditEntry{}
 	seen := make(map[string]bool, len(cfg.Datasets))
-	for _, ds := range cfg.Datasets {
+	for i, ds := range cfg.Datasets {
 		seen[ds.ID] = true
 		policy := firstNonEmpty(ds.Policy, cfg.Defaults.Policy)
-		entries = append(entries, buildAuditEntry(ds.ID, policy, ds.Target, true, lk.Items[ds.ID]))
+		shown := ds.Target
+		if info.root != "" {
+			shown = filepath.ToSlash(info.relTargets[i])
+		}
+		item := lk.Items[ds.ID]
+		entry := buildAuditEntry(ds.ID, policy, shown, true, item)
+		if opts.VerifyLocal && item != nil && !item.Deleted {
+			if info.unresolved[i] {
+				entry.Drift = DriftUnknown
+			} else {
+				entry.Drift, entry.Files = localDrift(ds.Target, item)
+			}
+		}
+		entries = append(entries, entry)
 	}
 
 	var orphanIDs []string
@@ -80,6 +126,10 @@ func Audit(cfgPath, lockPath string) int {
 		entries = append(entries, buildAuditEntry(id, "", "", false, lk.Items[id]))
 	}
 
+	for i := range entries {
+		entries[i].InaccessibleError = redact(entries[i].InaccessibleError)
+		entries[i].Note = redact(entries[i].Note)
+	}
 	if JSONOutput {
 		printAuditReport(entries)
 	} else {
@@ -124,7 +174,7 @@ func buildAuditEntry(id, policy, target string, inConfig bool, item *LockItem) A
 }
 
 func printAuditReport(entries []AuditEntry) {
-	data, err := json.MarshalIndent(AuditReport{Entries: entries}, "", "  ")
+	data, err := json.MarshalIndent(AuditReport{Format: ReportFormat, Entries: entries}, "", "  ")
 	if err != nil {
 		fmt.Printf("json encode error: %v\n", err)
 		return
@@ -171,7 +221,15 @@ func printAuditText(entries []AuditEntry) {
 		case e.CheckedAt != nil:
 			fmt.Printf(", checked %s", e.CheckedAt.Format(time.RFC3339))
 		}
+		if e.Drift != "" && e.Drift != DriftOK {
+			fmt.Printf(", local %s", e.Drift)
+		}
 		fmt.Println()
+		for _, f := range e.Files {
+			if f.Drift != DriftOK {
+				fmt.Printf("       %s: %s\n", f.Path, f.Drift)
+			}
+		}
 		if e.Note != "" {
 			fmt.Printf("       %s\n", e.Note)
 		}
@@ -179,4 +237,36 @@ func printAuditText(entries []AuditEntry) {
 
 	fmt.Printf("%d dataset(s): %d ok, %d pending, %d deleted, %d orphaned\n",
 		len(entries), counts[AuditOK], counts[AuditPending], counts[AuditDeleted], counts[AuditOrphaned])
+}
+
+// localDrift compares a tracked target with what the lockfile recorded for it.
+func localDrift(target string, item *LockItem) (string, []AuditFile) {
+	if !fileExists(target) {
+		return DriftMissing, nil
+	}
+	if len(item.DirFiles) > 0 {
+		drift := DriftOK
+		files := make([]AuditFile, 0, len(item.DirFiles))
+		for _, f := range item.DirFiles {
+			entry := AuditFile{Path: f.Path, SHA256: f.SHA256, Size: f.Size, Drift: DriftOK}
+			full := filepath.Join(target, filepath.FromSlash(f.Path))
+			if !fileExists(full) {
+				entry.Drift = DriftMissing
+			} else if h, err := HashFile(full); err != nil || h != f.SHA256 {
+				entry.Drift = DriftChanged
+			}
+			if entry.Drift != DriftOK {
+				drift = DriftChanged
+			}
+			files = append(files, entry)
+		}
+		return drift, files
+	}
+	if item.LocalSHA256 == "" {
+		return DriftUnknown, nil
+	}
+	if h, err := HashPath(target); err != nil || h != item.LocalSHA256 {
+		return DriftChanged, nil
+	}
+	return DriftOK, nil
 }

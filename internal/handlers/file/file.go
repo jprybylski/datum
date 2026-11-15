@@ -72,6 +72,15 @@ func (h *handler) FetchDir(ctx context.Context, src registry.Source, dest string
 }
 
 func fetchFile(srcPath, dest string) error {
+	tmp := dest + ".tmp"
+	if err := copyFile(srcPath, tmp); err != nil {
+		return err
+	}
+	return os.Rename(tmp, dest)
+}
+
+// copyFile copies srcPath to dest, creating dest's parent folders. A partial dest is removed.
+func copyFile(srcPath, dest string) error {
 	in, err := os.Open(srcPath)
 	if err != nil {
 		return err
@@ -80,21 +89,20 @@ func fetchFile(srcPath, dest string) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return err
 	}
-	tmp := dest + ".tmp"
-	out, err := os.Create(tmp)
+	out, err := os.Create(dest)
 	if err != nil {
 		return err
 	}
 	if _, err := io.Copy(out, in); err != nil {
 		out.Close()
-		_ = os.Remove(tmp)
+		_ = os.Remove(dest)
 		return err
 	}
 	if err := out.Close(); err != nil {
-		_ = os.Remove(tmp)
+		_ = os.Remove(dest)
 		return err
 	}
-	return os.Rename(tmp, dest)
+	return nil
 }
 
 // fetchDir recreates every file from srcDir under destDir, preserving relative paths, and returns
@@ -111,9 +119,12 @@ func fetchFile(srcPath, dest string) error {
 // two datasets sharing a target, and the fetch fails instead of silently overwriting (or being
 // overwritten by) the other dataset's file. Nothing is written when a conflict is detected.
 //
-// This isn't a whole-tree atomic operation - files are copied and removed one at a time, same as
-// the rest of datum's per-file atomicity (tmp file + rename). A crash partway through can leave
-// destDir in a partially-updated state; re-running Fetch will finish the job.
+// The sync is all-or-nothing where it can be (#38). When destDir holds only this dataset's own
+// files, the new tree is built in a sibling folder and swapped in (core.ReplaceDir), so an
+// interrupted sync leaves the old tree or the new one. When destDir is shared with other files,
+// every new file is written to a temporary name first, then all are renamed into place, and only
+// then are dropped files removed; an interruption during the renames can leave a mix, which the
+// next fetch completes.
 func fetchDir(srcDir, destDir string, prevManifest []string, claimed map[string]bool) ([]string, error) {
 	rels, err := core.DirManifest(srcDir)
 	if err != nil {
@@ -124,12 +135,50 @@ func fetchDir(srcDir, destDir string, prevManifest []string, claimed map[string]
 		return nil, fmt.Errorf("file: path(s) already synced here by another dataset: %s", strings.Join(conflicts, ", "))
 	}
 
+	exclusive, err := ownsWholeTree(destDir, prevManifest, claimed)
+	if err != nil {
+		return nil, err
+	}
+	if exclusive {
+		built, err := core.NewSiblingDir(destDir)
+		if err != nil {
+			return nil, err
+		}
+		for _, rel := range rels {
+			if err := copyFile(filepath.Join(srcDir, rel), filepath.Join(built, rel)); err != nil {
+				_ = os.RemoveAll(built)
+				return nil, fmt.Errorf("file: copying %q: %w", rel, err)
+			}
+		}
+		if err := core.ReplaceDir(built, destDir); err != nil {
+			_ = os.RemoveAll(built)
+			return nil, fmt.Errorf("file: replacing %q: %w", destDir, err)
+		}
+		return rels, nil
+	}
+
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return nil, err
 	}
 
+	// Write everything first, so a failed copy changes nothing in destDir.
+	tmps := make([]string, 0, len(rels))
+	cleanup := func() {
+		for _, tmp := range tmps {
+			_ = os.Remove(tmp)
+		}
+	}
 	for _, rel := range rels {
-		if err := fetchFile(filepath.Join(srcDir, rel), filepath.Join(destDir, rel)); err != nil {
+		tmp := filepath.Join(destDir, rel) + ".datum-tmp"
+		if err := copyFile(filepath.Join(srcDir, rel), tmp); err != nil {
+			cleanup()
+			return nil, fmt.Errorf("file: copying %q: %w", rel, err)
+		}
+		tmps = append(tmps, tmp)
+	}
+	for i, rel := range rels {
+		if err := os.Rename(tmps[i], filepath.Join(destDir, rel)); err != nil {
+			cleanup()
 			return nil, fmt.Errorf("file: copying %q: %w", rel, err)
 		}
 	}
@@ -147,6 +196,39 @@ func fetchDir(srcDir, destDir string, prevManifest []string, claimed map[string]
 	}
 
 	return rels, nil
+}
+
+// ownsWholeTree reports whether destDir can be replaced as a whole: it doesn't exist yet, or it's
+// a real folder (not a link) holding only files this dataset wrote last time, and no other
+// dataset has files there.
+func ownsWholeTree(destDir string, prevManifest []string, claimed map[string]bool) (bool, error) {
+	if len(claimed) > 0 {
+		return false, nil
+	}
+	info, err := os.Lstat(destDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !info.IsDir() {
+		return false, nil // a file or link: leave it to the in-place path, as before
+	}
+	current, err := core.DirManifest(destDir)
+	if err != nil {
+		return false, err
+	}
+	owned := make(map[string]bool, len(prevManifest))
+	for _, rel := range prevManifest {
+		owned[rel] = true
+	}
+	for _, rel := range current {
+		if !owned[rel] {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // conflictingPaths returns, sorted, every path in rels that's also in claimed - relative paths a
