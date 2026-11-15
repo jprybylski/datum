@@ -86,9 +86,18 @@ datum fetch private_api
   sources continue to use normal shell variables from their inherited environment.
 - Write `$${NAME}` when the resulting configuration value must contain the literal `${NAME}`.
 - Substitution applies to values, never YAML mapping keys. Values are not written to the lockfile,
-  but a substituted secret may still be exposed by a downstream URL, command, or error message;
-  prefer purpose-built authentication environment variables (such as the Git handler's
-  `GIT_TOKEN`) when one is available.
+  and datum replaces every substituted value (4 characters or longer), every URL query value and
+  every `user:password@` with `[redacted]` in its own output and in the lockfile's
+  `inaccessible_error`. A secret can still be exposed by what a source does with it (a command, a
+  server's own logs); prefer purpose-built authentication environment variables (such as the Git
+  handler's `GIT_TOKEN`) when one is available.
+- Only the datasets a command works on need their variables: `fetch ID` needs that dataset's,
+  `check` needs every dataset's, and `audit`, `undelete` and `unlock` need none (an unset
+  reference is shown as written). `delete ID` needs the variables in that dataset's target.
+- `--env-allow NAME,...` or `--env-prefix PREFIX` restricts which variables a config may reference
+  at all; any other reference is a configuration error naming the dataset and field. Useful when
+  running datum on a config you didn't write; see
+  [Embedding datum]({{ '/embedding.html' | relative_url }}).
 
 Quote a value when its placeholder replaces the whole value and the final type must be a string.
 Some editors may report a schema warning when a placeholder hides a required literal prefix, such

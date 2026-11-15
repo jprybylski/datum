@@ -102,7 +102,9 @@ This checks if the remote data has changed. Based on your policy:
 
 Download a binary for Linux, macOS, or Windows (amd64/arm64) from the
 [latest release](https://github.com/jprybylski/datum/releases/latest) - each one is built with
-git support included. Verify against `checksums.txt` in the same release if you want.
+git support included. Verify against `checksums.txt` in the same release if you want. Released
+assets never change (a new build gets a new version), and the binaries are static, needing no Git,
+shell or runtime libraries.
 
 ### Prerequisites (building from source)
 
@@ -223,6 +225,12 @@ datum init --empty
 
 `check` exits `0` (up-to-date), `1` (changed/failed), or `2` (config error). Full flag reference
 and exit-code details: [Commands](https://jprybylski.github.io/datum/commands.html).
+
+Running datum on a config you didn't write (from an app, CI over shared folders, or a wrapper)?
+Opt-in flags make datum refuse what it shouldn't do: `--no-vcs`, `--allow-types http,file,git`,
+`--root`/`--target-prefix`, `--env-allow`, `--https-only`, plus `--report-only` checks and staged
+fetches (`--stage-dir`/`--lock-out`) to review before applying. See
+[Embedding datum](https://jprybylski.github.io/datum/embedding.html).
 
 ## Data Source Handlers
 
