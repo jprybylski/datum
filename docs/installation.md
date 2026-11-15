@@ -24,6 +24,11 @@ tar -xzf datum_*_linux_amd64.tar.gz  # or unzip on Windows
 
 Each release also includes a `checksums.txt` if you want to verify the download.
 
+A release's assets never change once published: a different build always gets a new version, so
+you can pin an archive by the SHA-256 in `checksums.txt`. The binaries are static
+(`CGO_ENABLED=0`) and need nothing beyond the operating system: no Git, shell or runtime
+libraries, even for git sources.
+
 ## Prerequisites (building from source)
 
 - Go 1.25 or later

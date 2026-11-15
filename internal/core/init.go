@@ -2,6 +2,7 @@ package core
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -29,10 +30,40 @@ type InitOptions struct {
 	ID, Type, Source, Target, Desc, Policy string
 	Ignore, Empty                          bool
 	DescSet, PolicySet, IgnoreSet          bool
+	// NoVCS skips working-copy detection and ignore-rule edits (--no-vcs, #35).
+	NoVCS bool
+}
+
+// InitReport is the --json document init prints on success (#39).
+type InitReport struct {
+	Format   string   `json:"format"`
+	Config   string   `json:"config"`
+	Datasets []string `json:"datasets"`
 }
 
 // Init creates a new configuration and can optionally add one basic HTTP or file dataset.
+//
+// With --json it never prompts, and prints one document: an InitReport, or {"error": ...}.
 func Init(configPath string, options InitOptions, in io.Reader, out io.Writer, interactive bool) int {
+	if !JSONOutput {
+		return initText(configPath, options, in, out, interactive)
+	}
+	var text bytes.Buffer
+	code := initText(configPath, options, in, &text, false)
+	if code != 0 {
+		lines := strings.Split(strings.TrimSpace(text.String()), "\n")
+		writeJSON(out, errorDocument(lines[len(lines)-1]))
+		return code
+	}
+	ids := []string{}
+	if !options.Empty && options.ID != "" {
+		ids = append(ids, options.ID)
+	}
+	writeJSON(out, InitReport{Format: ReportFormat, Config: configPath, Datasets: ids})
+	return 0
+}
+
+func initText(configPath string, options InitOptions, in io.Reader, out io.Writer, interactive bool) int {
 	if _, err := os.Stat(configPath); err == nil {
 		fmt.Fprintf(out, "init error: config already exists: %s\n", configPath)
 		return 2
@@ -96,7 +127,11 @@ func Init(configPath string, options InitOptions, in io.Reader, out io.Writer, i
 			ID: options.ID, Desc: options.Desc, Source: source, Target: options.Target,
 		}},
 	}
-	ignorePlan, err := prepareIgnore(cfg)
+	plan := &ignorePlan{}
+	var err error
+	if !options.NoVCS {
+		plan, err = prepareIgnore(cfg)
+	}
 	if err != nil {
 		fmt.Fprintf(out, "init error: prepare ignore rules: %v\n", err)
 		return 2
@@ -110,7 +145,7 @@ func Init(configPath string, options InitOptions, in io.Reader, out io.Writer, i
 		fmt.Fprintf(out, "init error: write config: %v\n", err)
 		return 1
 	}
-	if err := applyIgnore(ignorePlan); err != nil {
+	if err := applyIgnore(plan); err != nil {
 		if removeErr := os.Remove(configPath); removeErr != nil {
 			fmt.Fprintf(out, "init error: apply ignore rules: %v (also could not remove config: %v)\n", err, removeErr)
 		} else {

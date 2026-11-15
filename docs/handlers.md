@@ -28,6 +28,11 @@ probe used for ordinary GET sources. A non-empty `body` changes the request to P
 the existing HEAD/GET behavior is unchanged. Header and body values support normal `${NAME}`
 environment substitution, so credentials do not need to be committed.
 
+Redirects are followed (at most 10), with two limits: a redirect from `https://` to anything
+else is refused, so nothing is ever sent in clear text after starting over TLS; and a redirect to
+a different host drops `Authorization` and every header from `headers`, so credentials only go to
+the host they were configured for. `--https-only` refuses `http://` source URLs at load.
+
 POST endpoints must be safe to repeat: both `check` and `fetch` execute the configured request.
 A fetch derives the fingerprint from the same response it writes, so it does not issue a second
 POST merely to fingerprint the result.
@@ -87,8 +92,14 @@ target: data/dataset/
   Sharing a target this way is only safe when those datasets are fetched at `--concurrency 1`
   (the default) - conflict detection isn't guaranteed to catch the case where two datasets
   sharing a target are fetched fully in parallel.
-- Directory sync isn't a single atomic operation; files are copied/removed one at a time. A
-  crash mid-fetch can leave `target` partially updated - re-running `fetch` finishes the job.
+- When `target` holds only this dataset's files, the new tree is built next to it and swapped in
+  as a whole, so an interrupted sync leaves the old tree or the new one (the next `check` or
+  `fetch` restores the old one if datum stopped mid-swap). When `target` is shared with other
+  files or datasets, every new file is written first, then all are renamed into place, then
+  removed files are deleted; an interruption during the renames can leave a mix, which
+  re-running `fetch` completes.
+- The lockfile records each written file's SHA-256 and size (`dir_files`), which
+  `datum --verify-local audit` compares with what's on disk.
 
 See it in action: [Example 7 - Directory Sync]({{ '/examples.html' | relative_url }}#example-7-file-handler---directory-sync).
 
@@ -133,7 +144,7 @@ source:
 **Fingerprinting:** Git blob SHA1 hash (native git object hash).
 
 **Features:**
-- Caches repositories in `~/.cache/datum/git/` (or `$XDG_CACHE_HOME`)
+- Caches repositories in `~/.cache/datum/git/` (or `$XDG_CACHE_HOME/git/`, or `--cache-dir`)
 - Supports HTTPS and SSH authentication
 - Shallow clones for efficiency
 - Resolves both branches and tags
@@ -162,6 +173,10 @@ throwaway containers where that verification isn't practical, you can explicitly
 ```bash
 export DATUM_GIT_INSECURE_HOST_KEY=1  # skips SSH host-key verification - MITM risk, use with care
 ```
+
+`--git-https-only` (or `--https-only`) refuses any repository URL that isn't `https://` at load
+(`git@host:...`, `ssh://`, `git://`, `http://`, `file://`), and the handler then never consults an
+SSH agent or `GIT_SSH_KEY`.
 
 ---
 

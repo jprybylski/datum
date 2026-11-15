@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-11-15
+
+### Added
+- Opt-in global flags for running datum on configs it didn't write, documented in the new
+  "Embedding datum" page. Without them nothing changes.
+- `--no-vcs` (or `DATUM_NO_VCS=1`) never runs `git`/`svn` and never edits ignore rules; a dataset
+  with `ignore: true` gets a warning instead (#35).
+- `--allow-types` (or `DATUM_ALLOW_TYPES`) refuses any other source type, in `source` or
+  `sources`, at load (#36).
+- `--root` resolves targets and relative `file` sources in a folder and keeps every target inside
+  it (relative, no `..`, no symlink escape, never the config or lockfile); `--target-prefix`
+  requires targets under a subfolder (#37).
+- `fetch --stage-dir DIR --lock-out PATH` writes targets and the new lockfile to a staging area,
+  leaving the project untouched, and reports per dataset the files written and removed; the
+  staged lockfile matches an in-place fetch's (#38).
+- `--json` for `delete`, `undelete`, `unlock` and `init` (which then never prompts; `delete` and
+  `unlock` need `--yes`), a `"format": "datum-report/1"` field in every JSON document except
+  `schema`, and `datum --json --version` with build features (#39).
+- `check --report-only` writes nothing (no targets, lockfile or ignore rules) and reports `update`
+  datasets that would be re-fetched as `stale` (#40).
+- The lockfile records `size` for single-file targets and `dir_files` (path, SHA-256, size) for
+  directory targets; `audit --verify-local` reports local drift per dataset and per file (#41).
+- `--env-allow` and `--env-prefix` restrict which `${NAME}` variables a config may reference (#42).
+- `--git-https-only` refuses non-`https://` git URLs and never uses SSH keys or agents;
+  `--cache-dir` sets the git cache folder (#43).
+- `--https-only` refuses `http://` sources at load (#44).
+
+### Changed
+- `${NAME}` is substituted only in the datasets a command works on: `fetch ID` needs only that
+  dataset's variables, and `audit`, `undelete` and `unlock` need none (#42).
+- Directory sync replaces a target folder that holds only the dataset's own files as a whole, so
+  an interrupted sync leaves the old or the new tree; shared folders get every file written before
+  any is replaced or removed (#38).
+- Releases refuse to publish a version whose tag points at a different commit, and never replace
+  existing assets; the docs state that release binaries are static (#45).
+
+### Fixed
+- `datum --json audit` on a config with no datasets printed `"entries": null`; it now prints an
+  empty array.
+
+### Security
+- Substituted `${NAME}` values, URL query values and URL `user:password@` are redacted in output
+  and in the lockfile's `inaccessible_error` (#42).
+- HTTP sources refuse a redirect from `https://` to `http://`, and drop `Authorization` and
+  configured headers on a redirect to another host (#44).
+- A lockfile `dir_paths` entry that is absolute or contains `..` is refused, so fetch cleanup and
+  `delete` can't remove files outside a target (#37).
+
 ## [1.6.0] - 2026-09-01
 
 ### Added

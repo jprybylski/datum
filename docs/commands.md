@@ -35,11 +35,21 @@ Global flags go *before* the subcommand (`datum --json check`, not `datum check 
 - `--json` - print a single JSON document instead of colorized text, for scripts and other
   programmatic consumers (`check`/`fetch`: `{"results": [...]}`, one object per dataset with its
   `id`, `status`, fingerprints, and any warnings; `audit`: `{"entries": [...]}`, see below). Exit
-  codes are unchanged.
+  codes are unchanged. `delete`, `undelete`, `unlock`, `init`, `types` and `--version` accept it
+  too. Every JSON document except `datum schema` carries `"format": "datum-report/1"`; see
+  [Embedding datum]({{ '/embedding.html' | relative_url }}#json-format).
 
 `delete` and `unlock` additionally accept:
 
 - `--yes` - skip the confirmation prompt (for scripts/CI). Has no effect on other commands.
+  Required with `--json`, which never prompts.
+
+For running datum on a config you didn't write (from an app, CI over shared folders, a wrapper),
+there are opt-in flags that make datum refuse what it shouldn't do: `--no-vcs`, `--allow-types`,
+`--root`, `--target-prefix`, `--env-allow`, `--env-prefix`, `--https-only`, `--git-https-only` and
+`--cache-dir`. `check` accepts `--report-only` (write nothing), `fetch` accepts `--stage-dir` with
+`--lock-out` (a staged fetch to review and promote), and `audit` accepts `--verify-local` (local
+drift). They're described in [Embedding datum]({{ '/embedding.html' | relative_url }}).
 
 ```bash
 datum --timeout 2m --concurrency 4 check
@@ -191,6 +201,11 @@ datum audit
 # Machine-readable output for scripting:
 datum --json audit
 ```
+
+With `--verify-local`, audit also hashes each tracked target and adds `drift` (`ok`, `changed`,
+`missing` or `unknown`) to each entry, and per-file `files` for directory targets; see
+[Embedding datum]({{ '/embedding.html' | relative_url }}#audit-drift). Without it, audit reads no
+data files. Audit never needs the `${NAME}` variables of a source.
 
 `--no-color` and `NO_COLOR` are honored the same as `check`/`fetch`. Exit code is always `0`
 unless the config or lockfile can't be loaded (`2`) - `audit` reports what it finds, it doesn't

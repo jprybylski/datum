@@ -78,79 +78,23 @@ func (ds *Dataset) ShouldIgnore(defaultValue bool) bool {
 	return defaultValue
 }
 
-// readConfig loads and parses the configuration file from disk.
-//
-// The function reads the YAML file, unmarshals it into a Config struct,
-// and applies default values for any unspecified settings.
-//
-// Parameters:
-//   - path: Path to the configuration file (typically .data.yaml)
-//
-// Returns:
-//   - A pointer to the parsed Config struct
-//   - An error if the file cannot be read or parsed
-//
-// Go learning note: This function applies "sensible defaults" - if a field
-// is not specified in the YAML, it gets a reasonable default value.
-func readConfig(path string) (*Config, error) {
-	// Read the entire file into a byte slice
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	// Parse into a YAML node first so environment values are substituted in scalar values, not
-	// in the YAML source text. This matters for secrets containing YAML-significant characters
-	// such as ':', '#', or newlines: they remain one value and cannot change the document's
-	// structure.
-	var document yaml.Node
-	if err := yaml.Unmarshal(b, &document); err != nil {
-		return nil, err
-	}
-	if err := expandEnvInYAML(&document); err != nil {
-		return nil, fmt.Errorf("expand environment variables: %w", err)
-	}
-
-	// Decode the expanded YAML into a Config struct.
-	var c Config
-	if err := document.Decode(&c); err != nil {
-		return nil, err
-	}
-
-	// Apply default values if not specified in the configuration
-	// This ensures the config always has valid values even if the user
-	// doesn't explicitly set them
-	if c.Defaults.Policy == "" {
-		c.Defaults.Policy = "fail" // Default to strict mode
-	}
-	if c.Defaults.Algo == "" {
-		c.Defaults.Algo = "sha256" // Default to SHA256 hashing
-	}
-
-	// Validate dataset configurations
-	for i, ds := range c.Datasets {
-		if err := validateDataset(&ds); err != nil {
-			return nil, fmt.Errorf("dataset %d (%s): %w", i, ds.ID, err)
-		}
-	}
-
-	return &c, nil
-}
-
 // expandEnvInYAML replaces ${NAME} references in YAML scalar values. Mapping keys are left
 // untouched so environment input cannot rename configuration fields. A doubled dollar sign
-// escapes a reference: $${NAME} becomes the literal ${NAME}.
-func expandEnvInYAML(node *yaml.Node) error {
+// escapes a reference: $${NAME} becomes the literal ${NAME}. When lenient is set, a reference
+// to an unset variable is kept as written instead of failing (see expandScope).
+//
+// Every substituted value is remembered so output can redact it (see redact).
+func expandEnvInYAML(node *yaml.Node, lenient bool) error {
 	if node.Kind == yaml.MappingNode {
 		for i := 1; i < len(node.Content); i += 2 {
-			if err := expandEnvInYAML(node.Content[i]); err != nil {
+			if err := expandEnvInYAML(node.Content[i], lenient); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
 	if node.Kind == yaml.ScalarNode && node.Tag == "!!str" {
-		expanded, err := expandEnvValue(node.Value)
+		expanded, err := expandEnvValue(node.Value, lenient)
 		if err != nil {
 			return fmt.Errorf("line %d, column %d: %w", node.Line, node.Column, err)
 		}
@@ -158,14 +102,14 @@ func expandEnvInYAML(node *yaml.Node) error {
 		return nil
 	}
 	for _, child := range node.Content {
-		if err := expandEnvInYAML(child); err != nil {
+		if err := expandEnvInYAML(child, lenient); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func expandEnvValue(value string) (string, error) {
+func expandEnvValue(value string, lenient bool) (string, error) {
 	var expanded strings.Builder
 	for i := 0; i < len(value); {
 		if value[i] != '$' || i+1 == len(value) {
@@ -189,8 +133,14 @@ func expandEnvValue(value string) (string, error) {
 			}
 			replacement, ok := os.LookupEnv(name)
 			if !ok {
+				if lenient {
+					expanded.WriteString(value[i : end+1])
+					i = end + 1
+					continue
+				}
 				return "", fmt.Errorf("environment variable %q is not set", name)
 			}
+			rememberSecret(replacement)
 			expanded.WriteString(replacement)
 			i = end + 1
 		default:
