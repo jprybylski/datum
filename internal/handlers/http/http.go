@@ -25,7 +25,9 @@ type outputFile interface {
 
 var createOutputFile = func(path string) (outputFile, error) { return os.Create(path) }
 
-func New() *handler             { return &handler{client: &http.Client{Timeout: 60 * time.Second}} }
+func New() *handler {
+	return &handler{client: &http.Client{Timeout: 60 * time.Second, CheckRedirect: checkRedirect}}
+}
 func (h *handler) Name() string { return "http" }
 
 func (h *handler) Fingerprint(ctx context.Context, src registry.Source) (string, error) {
@@ -137,7 +139,47 @@ func (h *handler) FetchWithFingerprint(ctx context.Context, src registry.Source,
 	return fp, nil
 }
 
+// maxRedirects matches Go's default redirect limit.
+const maxRedirects = 10
+
+// sourceHeadersKey carries the names of a source's configured headers on the request context,
+// so checkRedirect knows which headers came from the config.
+type sourceHeadersKey struct{}
+
+// checkRedirect is the client's redirect policy (#44):
+//   - a redirect from https:// to anything else is refused, so nothing (headers, body, a token
+//     in the URL) is ever sent in clear text after starting over TLS;
+//   - on a redirect to another host, Authorization and every header from the source's headers
+//     map are dropped (Go already drops Authorization, Cookie and WWW-Authenticate for a host
+//     outside the original domain, but forwards custom headers such as X-API-Key);
+//   - at most 10 redirects are followed, as by default.
+func checkRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= maxRedirects {
+		return fmt.Errorf("stopped after %d redirects", maxRedirects)
+	}
+	first := via[0]
+	if strings.EqualFold(first.URL.Scheme, "https") && !strings.EqualFold(req.URL.Scheme, "https") {
+		return fmt.Errorf("refusing redirect from https to %s://%s", req.URL.Scheme, req.URL.Host)
+	}
+	if !strings.EqualFold(req.URL.Host, first.URL.Host) {
+		req.Header.Del("Authorization")
+		if names, ok := req.Context().Value(sourceHeadersKey{}).([]string); ok {
+			for _, name := range names {
+				req.Header.Del(name)
+			}
+		}
+	}
+	return nil
+}
+
 func request(ctx context.Context, src registry.Source, method string) (*http.Request, error) {
+	if len(src.Headers) > 0 {
+		names := make([]string, 0, len(src.Headers))
+		for name := range src.Headers {
+			names = append(names, name)
+		}
+		ctx = context.WithValue(ctx, sourceHeadersKey{}, names)
+	}
 	var body io.Reader
 	if method == http.MethodPost {
 		body = strings.NewReader(src.Body)

@@ -1,8 +1,10 @@
 package core
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -43,6 +45,13 @@ type LockItem struct {
 	// all of a dataset's tracked state stays in one place.
 	DirPaths []string `yaml:"dir_paths,omitempty"`
 
+	// Size is the byte size of a single-file target as written by the last fetch (#41).
+	Size int64 `yaml:"size,omitempty"`
+	// DirFiles records the SHA-256 and size of every file a directory fetch wrote, in DirPaths
+	// order, so drift and provenance are visible per file. DirPaths is kept alongside it for
+	// older datum versions and tools that read it (#41).
+	DirFiles []FileEntry `yaml:"dir_files,omitempty"`
+
 	// Deleted marks that `datum delete` removed this dataset's local files on purpose. Check and
 	// Fetch skip any dataset whose lock item has Deleted set, rather than treating the missing
 	// target as something to re-fetch or fail on - `datum undelete` clears it. This lives in the
@@ -50,6 +59,14 @@ type LockItem struct {
 	Deleted bool `yaml:"deleted,omitempty"`
 	// DeletedAt records when `datum delete` ran, for the same reasons InaccessibleAt does.
 	DeletedAt *time.Time `yaml:"deleted_at,omitempty"`
+}
+
+// FileEntry is one file's content hash and size, keyed by its slash-separated path relative to a
+// directory target.
+type FileEntry struct {
+	Path   string `yaml:"path" json:"path"`
+	SHA256 string `yaml:"sha256" json:"sha256"`
+	Size   int64  `yaml:"size" json:"size"`
 }
 
 // readLock loads the lockfile from disk.
@@ -87,6 +104,24 @@ func readLock(path string) (*Lock, error) {
 		l.Items = map[string]*LockItem{}
 	}
 
+	// A lockfile is data, and may come from someone else: its recorded paths must stay inside
+	// their target, since fetch cleanup and delete remove them.
+	for id, item := range l.Items {
+		if item == nil {
+			continue
+		}
+		for _, rel := range item.DirPaths {
+			if !safeRelPath(rel) {
+				return nil, fmt.Errorf("item %q: dir_paths entry %q is not a relative path inside the target", id, rel)
+			}
+		}
+		for _, f := range item.DirFiles {
+			if !safeRelPath(f.Path) {
+				return nil, fmt.Errorf("item %q: dir_files entry %q is not a relative path inside the target", id, f.Path)
+			}
+		}
+	}
+
 	return &l, nil
 }
 
@@ -108,6 +143,13 @@ func readLock(path string) (*Lock, error) {
 // Go learning note: The 0o644 is an octal file permission (readable by all, writable by owner).
 // The 'o' prefix indicates octal notation (base 8), a Go 1.13+ feature.
 func writeLock(path string, l *Lock) error {
+	// Error messages can carry a URL; never persist a secret in it (#42).
+	for _, item := range l.Items {
+		if item != nil {
+			item.InaccessibleError = redact(item.InaccessibleError)
+		}
+	}
+
 	// Marshal the Lock struct to YAML bytes
 	b, err := yaml.Marshal(l)
 	if err != nil {
@@ -131,4 +173,22 @@ func writeLock(path string, l *Lock) error {
 	// Atomically rename temporary file to final destination
 	// If this succeeds, the file is guaranteed to be complete
 	return os.Rename(tmp, path)
+}
+
+// safeRelPath reports whether p is a non-empty relative path with no ".." part, in either slash
+// style, so joining it to a target can't leave the target.
+func safeRelPath(p string) bool {
+	if p == "" || filepath.IsAbs(p) || filepath.VolumeName(p) != "" {
+		return false
+	}
+	slashed := strings.ReplaceAll(p, `\`, "/")
+	if strings.HasPrefix(slashed, "/") {
+		return false
+	}
+	for _, part := range strings.Split(slashed, "/") {
+		if part == ".." {
+			return false
+		}
+	}
+	return true
 }

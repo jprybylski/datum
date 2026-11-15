@@ -105,6 +105,9 @@ func parseGitSource(src registry.Source) (repoURL, ref, path string, err error) 
 	if src.URL == "" || src.Path == "" || src.Ref == "" {
 		return "", "", "", errors.New("git: require source.url, source.ref, source.path")
 	}
+	if registry.Current().GitHTTPSOnly && !strings.HasPrefix(strings.ToLower(src.URL), "https://") {
+		return "", "", "", errors.New("git: only https:// repository URLs are allowed (--git-https-only)")
+	}
 	return src.URL, src.Ref, filepath.ToSlash(src.Path), nil
 }
 
@@ -234,6 +237,9 @@ func blobForPathAtCommit(repo *git.Repository, commit *object.Commit, filePath s
 }
 
 func defaultCacheDir() string {
+	if v := registry.Current().CacheDir; v != "" {
+		return v
+	}
 	if v := os.Getenv("XDG_CACHE_HOME"); v != "" {
 		return v
 	}
@@ -264,6 +270,12 @@ func gitAuth(raw string) gittransport.AuthMethod {
 		if user != "" || pass != "" {
 			return &githttp.BasicAuth{Username: user, Password: pass}
 		}
+		return nil
+	}
+
+	// Never consult an SSH agent or key when only HTTPS is allowed (#43). parseGitSource
+	// already refuses such URLs; this keeps the guarantee local to the auth code too.
+	if registry.Current().GitHTTPSOnly {
 		return nil
 	}
 

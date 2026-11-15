@@ -60,11 +60,32 @@ func applyIgnorePlan(plan *ignorePlan) error {
 	return nil
 }
 
+// reconcileIgnoresWith is reconcileIgnores under opts: a no-op with --no-vcs (#35), and with
+// --root the working copy is found from the root rather than the working directory.
+func reconcileIgnoresWith(cfg *Config, info *configInfo, opts Options) error {
+	if opts.NoVCS {
+		return nil
+	}
+	if info != nil && info.root != "" {
+		plan, err := prepareIgnorePlanFrom(cfg, info.root)
+		if err != nil {
+			return err
+		}
+		return applyIgnorePlan(plan)
+	}
+	return reconcileIgnores(cfg)
+}
+
 func prepareIgnorePlan(cfg *Config) (*ignorePlan, error) {
 	cwd, err := getWorkingDirectory()
 	if err != nil {
 		return nil, err
 	}
+	return prepareIgnorePlanFrom(cfg, cwd)
+}
+
+func prepareIgnorePlanFrom(cfg *Config, cwd string) (*ignorePlan, error) {
+	var err error
 	plan := &ignorePlan{}
 	if root, ok := findWorkingCopy(cwd, ".git"); ok {
 		plan.git, err = prepareGitIgnore(root, cwd, cfg)

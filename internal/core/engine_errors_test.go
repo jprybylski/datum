@@ -175,7 +175,7 @@ func TestCheckOneDataset_LocalHashError(t *testing.T) {
 	var w strings.Builder
 	res := &Result{}
 
-	code := checkOneDataset(context.Background(), &w, res, ds, "log", store, time.Now().UTC(), nil)
+	code := checkOneDataset(context.Background(), &w, res, ds, "log", store, time.Now().UTC(), nil, false)
 	if code != 0 {
 		t.Errorf("checkOneDataset() = %d, want 0 (log policy doesn't fail on local hash error)", code)
 	}
@@ -200,7 +200,7 @@ func TestCheckOneDataset_UpdatePolicy_AllSourcesFailToFetch(t *testing.T) {
 	var w strings.Builder
 	now := time.Now().UTC()
 
-	code := checkOneDataset(context.Background(), &w, nil, ds, "update", store, now, nil)
+	code := checkOneDataset(context.Background(), &w, nil, ds, "update", store, now, nil, false)
 	if code != 1 {
 		t.Errorf("checkOneDataset() = %d, want 1", code)
 	}
@@ -221,7 +221,7 @@ func TestCheckOneDataset_UpdatePolicy_LocalHashErrorAfterFetch(t *testing.T) {
 	var w strings.Builder
 	res := &Result{}
 
-	code := checkOneDataset(context.Background(), &w, res, ds, "update", store, time.Now().UTC(), nil)
+	code := checkOneDataset(context.Background(), &w, res, ds, "update", store, time.Now().UTC(), nil, false)
 	if code != 0 {
 		t.Errorf("checkOneDataset() = %d, want 0 (fetch succeeded even though hashing failed after)", code)
 	}
@@ -245,7 +245,7 @@ func TestCheckOneDataset_LogPolicy_NotStale(t *testing.T) {
 	var w strings.Builder
 	res := &Result{}
 
-	code := checkOneDataset(context.Background(), &w, res, ds, "log", store, time.Now().UTC(), nil)
+	code := checkOneDataset(context.Background(), &w, res, ds, "log", store, time.Now().UTC(), nil, false)
 	if code != 0 {
 		t.Errorf("checkOneDataset() = %d, want 0", code)
 	}
@@ -264,7 +264,7 @@ func TestCheckOneDataset_FailPolicy_NotStale(t *testing.T) {
 	}}}
 	var w strings.Builder
 
-	code := checkOneDataset(context.Background(), &w, nil, ds, "fail", store, time.Now().UTC(), nil)
+	code := checkOneDataset(context.Background(), &w, nil, ds, "fail", store, time.Now().UTC(), nil, false)
 	if code != 0 {
 		t.Errorf("checkOneDataset() = %d, want 0", code)
 	}
@@ -280,7 +280,7 @@ func TestCheckOneDataset_UnknownPolicy(t *testing.T) {
 		var w strings.Builder
 		res := &Result{}
 
-		code := checkOneDataset(context.Background(), &w, res, ds, "bogus-policy", store, time.Now().UTC(), nil)
+		code := checkOneDataset(context.Background(), &w, res, ds, "bogus-policy", store, time.Now().UTC(), nil, false)
 		if code != 1 {
 			t.Errorf("checkOneDataset() = %d, want 1 (unknown policy treated as fail when stale)", code)
 		}
@@ -299,7 +299,7 @@ func TestCheckOneDataset_UnknownPolicy(t *testing.T) {
 		}}}
 		var w strings.Builder
 
-		code := checkOneDataset(context.Background(), &w, nil, ds, "bogus-policy", store, time.Now().UTC(), nil)
+		code := checkOneDataset(context.Background(), &w, nil, ds, "bogus-policy", store, time.Now().UTC(), nil, false)
 		if code != 0 {
 			t.Errorf("checkOneDataset() = %d, want 0 (unknown policy, but not stale)", code)
 		}
@@ -408,7 +408,7 @@ func TestFetchOneDataset_LocalHashErrorAfterFetch(t *testing.T) {
 	var w strings.Builder
 	res := &Result{}
 
-	code := fetchOneDataset(context.Background(), &w, res, ds, store, time.Now().UTC(), nil)
+	code := fetchOneDataset(context.Background(), &w, res, ds, store, time.Now().UTC(), nil, nil)
 	if code != 0 {
 		t.Errorf("fetchOneDataset() = %d, want 0 (fetch succeeded even though hashing failed after)", code)
 	}

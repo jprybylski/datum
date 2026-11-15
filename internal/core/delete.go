@@ -2,6 +2,7 @@ package core
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -9,6 +10,82 @@ import (
 	"strings"
 	"time"
 )
+
+// actionReport collects the per-id outcome of delete, undelete and unlock. In text mode it
+// prints as it goes, exactly as before; with --json it prints nothing until finish, which prints
+// one document (#39).
+type actionReport struct {
+	out     io.Writer
+	results []ActionResult
+}
+
+// ActionResult is one id's outcome in the --json output of delete, undelete and unlock.
+// Status is "deleted", "undeleted", "unlocked", "skipped" (nothing to do) or "error".
+type ActionResult struct {
+	ID      string `json:"id"`
+	Status  string `json:"status"`
+	Message string `json:"message,omitempty"`
+}
+
+// ActionReport is the --json document delete, undelete and unlock print.
+type ActionReport struct {
+	Format  string         `json:"format"`
+	Results []ActionResult `json:"results"`
+}
+
+func (r *actionReport) text(format string, args ...any) {
+	if !JSONOutput {
+		fmt.Fprintf(r.out, format, args...)
+	}
+}
+
+func (r *actionReport) result(id, status, message string) {
+	r.results = append(r.results, ActionResult{ID: id, Status: status, Message: message})
+}
+
+// fail reports an error that stops the command before or instead of per-id work.
+func (r *actionReport) fail(code int, msg string) int {
+	msg = redact(msg)
+	if JSONOutput {
+		writeJSON(r.out, errorDocument(msg))
+	} else {
+		fmt.Fprintln(r.out, msg)
+	}
+	return code
+}
+
+func (r *actionReport) finish(code int) int {
+	if JSONOutput {
+		results := r.results
+		if results == nil {
+			results = []ActionResult{}
+		}
+		writeJSON(r.out, ActionReport{Format: ReportFormat, Results: results})
+	}
+	return code
+}
+
+// writeJSON prints v as one indented JSON document.
+func writeJSON(out io.Writer, v any) {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		fmt.Fprintf(out, "json encode error: %v\n", err)
+		return
+	}
+	fmt.Fprintln(out, string(data))
+}
+
+// confirm asks a y/N question, or fails under --json, which never prompts: there --yes is
+// required instead.
+func (r *actionReport) confirm(in io.Reader, question string) (bool, error) {
+	fmt.Fprint(r.out, question)
+	line, err := bufio.NewReader(in).ReadString('\n')
+	if err != nil && err != io.EOF {
+		return false, err
+	}
+	answer := strings.ToLower(strings.TrimSpace(line))
+	return answer == "y" || answer == "yes", nil
+}
 
 // Delete removes the local files tracked for each of ids and marks them Deleted in the lockfile,
 // so a later Check/Fetch skips them instead of treating the now-missing target as something to
@@ -22,21 +99,28 @@ import (
 // Returns 0 on success (including "nothing to do"), 2 for a config/lock load error or an id that
 // isn't a known dataset, or 1 if any dataset's files couldn't be removed.
 func Delete(cfgPath, lockPath string, ids []string, yes bool, in io.Reader, out io.Writer) int {
+	return DeleteWith(cfgPath, lockPath, ids, yes, in, out, Options{})
+}
+
+// DeleteWith is Delete with the options in opts. Only the selected datasets' targets need their
+// ${NAME} variables (#42); --root confines and resolves targets as for fetch (#37).
+func DeleteWith(cfgPath, lockPath string, ids []string, yes bool, in io.Reader, out io.Writer, opts Options) int {
+	r := &actionReport{out: out}
 	if len(ids) == 0 {
-		fmt.Fprintln(out, "usage: datum delete ID [ID ...]")
-		return 2
+		return r.fail(2, "usage: datum delete ID [ID ...]")
+	}
+	if JSONOutput && !yes {
+		return r.fail(2, "usage error: --json needs --yes for delete (there is no prompt)")
 	}
 
-	cfg, err := readConfig(cfgPath)
+	cfg, _, err := loadConfig(cfgPath, lockPath, opts, scopeSelected(ids))
 	if err != nil {
-		fmt.Fprintf(out, "config error: %v\n", err)
-		return 2
+		return r.fail(2, fmt.Sprintf("config error: %v", err))
 	}
 
 	lk, err := readLock(lockPath)
 	if err != nil {
-		fmt.Fprintf(out, "lock error: %v\n", err)
-		return 2
+		return r.fail(2, fmt.Sprintf("lock error: %v", err))
 	}
 
 	byID := make(map[string]Dataset, len(cfg.Datasets))
@@ -52,35 +136,34 @@ func Delete(cfgPath, lockPath string, ids []string, yes bool, in io.Reader, out 
 	for _, id := range ids {
 		ds, ok := byID[id]
 		if !ok {
-			fmt.Fprintf(out, "unknown dataset id: %s\n", id)
-			return 2
+			return r.fail(2, fmt.Sprintf("unknown dataset id: %s", id))
 		}
 		item := lk.Items[id]
 		if item != nil && item.Deleted {
-			fmt.Fprintf(out, "%s: already deleted\n", id)
+			r.text("%s: already deleted\n", id)
+			r.result(id, "skipped", "already deleted")
 			continue
 		}
 		toDelete = append(toDelete, pending{ds: ds, item: item})
 	}
 
 	if len(toDelete) == 0 {
-		fmt.Fprintln(out, "nothing to delete")
-		return 0
+		r.text("nothing to delete\n")
+		return r.finish(0)
 	}
 
-	fmt.Fprintln(out, "The following will be deleted:")
+	r.text("The following will be deleted:\n")
 	for _, p := range toDelete {
-		fmt.Fprintf(out, "  %s -> %s\n", p.ds.ID, p.ds.Target)
+		r.text("  %s -> %s\n", p.ds.ID, p.ds.Target)
 	}
 
 	if !yes {
-		fmt.Fprintf(out, "Delete %d dataset(s) and their tracked local files? [y/N] ", len(toDelete))
-		line, err := bufio.NewReader(in).ReadString('\n')
-		if err != nil && err != io.EOF {
+		ok, err := r.confirm(in, fmt.Sprintf("Delete %d dataset(s) and their tracked local files? [y/N] ", len(toDelete)))
+		if err != nil {
 			fmt.Fprintf(out, "reading confirmation: %v\n", err)
 			return 1
 		}
-		if answer := strings.ToLower(strings.TrimSpace(line)); answer != "y" && answer != "yes" {
+		if !ok {
 			fmt.Fprintln(out, "aborted, nothing deleted")
 			return 0
 		}
@@ -90,7 +173,8 @@ func Delete(cfgPath, lockPath string, ids []string, yes bool, in io.Reader, out 
 	exit := 0
 	for _, p := range toDelete {
 		if _, err := deleteDatasetFiles(p.ds, p.item, cfg.Datasets); err != nil {
-			fmt.Fprintf(out, "%s %s: %v\n", colorize(ansiRed, "[ERR ]"), p.ds.ID, err)
+			r.text("%s %s: %v\n", colorize(ansiRed, "[ERR ]"), p.ds.ID, err)
+			r.result(p.ds.ID, "error", err.Error())
 			exit = 1
 			continue
 		}
@@ -102,17 +186,21 @@ func Delete(cfgPath, lockPath string, ids []string, yes bool, in io.Reader, out 
 		}
 		item.Deleted = true
 		item.DeletedAt = &now
-		fmt.Fprintf(out, "%s %s: deleted\n", colorize(ansiGreen, "[DEL ]"), p.ds.ID)
+		r.text("%s %s: deleted\n", colorize(ansiGreen, "[DEL ]"), p.ds.ID)
+		r.result(p.ds.ID, "deleted", "")
 	}
 
 	lk.Version = 1
 	if err := writeLock(lockPath, lk); err != nil {
+		if JSONOutput {
+			return r.fail(1, fmt.Sprintf("lock write error: %v", err))
+		}
 		fmt.Fprintf(out, "lock write error: %v\n", err)
 		if exit == 0 {
 			exit = 1
 		}
 	}
-	return exit
+	return r.finish(exit)
 }
 
 // Undelete clears the Deleted flag `datum delete` set for each of ids, so the next Check/Fetch
@@ -123,38 +211,42 @@ func Delete(cfgPath, lockPath string, ids []string, yes bool, in io.Reader, out 
 // Returns 0 if every id was undeleted, 2 for a lock load error or missing ids, or 1 if any id
 // wasn't marked deleted (including ids datum has never heard of).
 func Undelete(lockPath string, ids []string, out io.Writer) int {
+	r := &actionReport{out: out}
 	if len(ids) == 0 {
-		fmt.Fprintln(out, "usage: datum undelete ID [ID ...]")
-		return 2
+		return r.fail(2, "usage: datum undelete ID [ID ...]")
 	}
 
 	lk, err := readLock(lockPath)
 	if err != nil {
-		fmt.Fprintf(out, "lock error: %v\n", err)
-		return 2
+		return r.fail(2, fmt.Sprintf("lock error: %v", err))
 	}
 
 	exit := 0
 	for _, id := range ids {
 		item := lk.Items[id]
 		if item == nil || !item.Deleted {
-			fmt.Fprintf(out, "%s: not marked as deleted\n", id)
+			r.text("%s: not marked as deleted\n", id)
+			r.result(id, "error", "not marked as deleted")
 			exit = 1
 			continue
 		}
 		item.Deleted = false
 		item.DeletedAt = nil
-		fmt.Fprintf(out, "%s %s: undeleted (run 'datum fetch %s' to restore data)\n", colorize(ansiGreen, "[UNDEL]"), id, id)
+		r.text("%s %s: undeleted (run 'datum fetch %s' to restore data)\n", colorize(ansiGreen, "[UNDEL]"), id, id)
+		r.result(id, "undeleted", fmt.Sprintf("run 'datum fetch %s' to restore data", id))
 	}
 
 	lk.Version = 1
 	if err := writeLock(lockPath, lk); err != nil {
+		if JSONOutput {
+			return r.fail(1, fmt.Sprintf("lock write error: %v", err))
+		}
 		fmt.Fprintf(out, "lock write error: %v\n", err)
 		if exit == 0 {
 			exit = 1
 		}
 	}
-	return exit
+	return r.finish(exit)
 }
 
 // Unlock permanently removes the lockfile entry for each of ids, regardless of whether the
@@ -171,25 +263,27 @@ func Undelete(lockPath string, ids []string, out io.Writer) int {
 //
 // cfgPath is read best-effort, only to annotate each id's still-tracked/orphaned status in the
 // confirmation prompt - a config read failure doesn't block unlocking, since unlock is
-// fundamentally a lockfile-only operation.
+// fundamentally a lockfile-only operation. It never needs ${NAME} variables (#42).
 //
 // Returns 0 if every id was unlocked (or there was nothing to do - see Delete's equivalent "not
 // found" note), 2 for a lock load/write error or no ids given, or 1 if any id had no lockfile
 // entry to remove.
 func Unlock(cfgPath, lockPath string, ids []string, yes bool, in io.Reader, out io.Writer) int {
+	r := &actionReport{out: out}
 	if len(ids) == 0 {
-		fmt.Fprintln(out, "usage: datum unlock ID [ID ...]")
-		return 2
+		return r.fail(2, "usage: datum unlock ID [ID ...]")
+	}
+	if JSONOutput && !yes {
+		return r.fail(2, "usage error: --json needs --yes for unlock (there is no prompt)")
 	}
 
 	lk, err := readLock(lockPath)
 	if err != nil {
-		fmt.Fprintf(out, "lock error: %v\n", err)
-		return 2
+		return r.fail(2, fmt.Sprintf("lock error: %v", err))
 	}
 
 	inConfig := map[string]bool{}
-	if cfg, err := readConfig(cfgPath); err == nil {
+	if cfg, _, err := loadConfig(cfgPath, lockPath, Options{}, scopeAllLenient); err == nil {
 		for _, ds := range cfg.Datasets {
 			inConfig[ds.ID] = true
 		}
@@ -204,7 +298,8 @@ func Unlock(cfgPath, lockPath string, ids []string, yes bool, in io.Reader, out 
 	for _, id := range ids {
 		item, ok := lk.Items[id]
 		if !ok {
-			fmt.Fprintf(out, "%s: no lockfile entry\n", id)
+			r.text("%s: no lockfile entry\n", id)
+			r.result(id, "error", "no lockfile entry")
 			exit = 1
 			continue
 		}
@@ -212,13 +307,13 @@ func Unlock(cfgPath, lockPath string, ids []string, yes bool, in io.Reader, out 
 	}
 
 	if len(toUnlock) == 0 {
-		fmt.Fprintln(out, "nothing to unlock")
-		return exit
+		r.text("nothing to unlock\n")
+		return r.finish(exit)
 	}
 
-	fmt.Fprintln(out, "The following lockfile entries will be permanently removed:")
+	r.text("The following lockfile entries will be permanently removed:\n")
 	for _, p := range toUnlock {
-		fmt.Fprintf(out, "  %s (%s)\n", p.id, unlockNote(p.item, inConfig[p.id]))
+		r.text("  %s (%s)\n", p.id, unlockNote(p.item, inConfig[p.id]))
 	}
 
 	if !yes {
@@ -226,13 +321,12 @@ func Unlock(cfgPath, lockPath string, ids []string, yes bool, in io.Reader, out 
 		if len(toUnlock) != 1 {
 			noun = "entries"
 		}
-		fmt.Fprintf(out, "Unlock %d %s? This cannot be undone. [y/N] ", len(toUnlock), noun)
-		line, err := bufio.NewReader(in).ReadString('\n')
-		if err != nil && err != io.EOF {
+		ok, err := r.confirm(in, fmt.Sprintf("Unlock %d %s? This cannot be undone. [y/N] ", len(toUnlock), noun))
+		if err != nil {
 			fmt.Fprintf(out, "reading confirmation: %v\n", err)
 			return 1
 		}
-		if answer := strings.ToLower(strings.TrimSpace(line)); answer != "y" && answer != "yes" {
+		if !ok {
 			fmt.Fprintln(out, "aborted, nothing unlocked")
 			return 0
 		}
@@ -240,17 +334,21 @@ func Unlock(cfgPath, lockPath string, ids []string, yes bool, in io.Reader, out 
 
 	for _, p := range toUnlock {
 		delete(lk.Items, p.id)
-		fmt.Fprintf(out, "%s %s: unlocked\n", colorize(ansiGreen, "[UNLK ]"), p.id)
+		r.text("%s %s: unlocked\n", colorize(ansiGreen, "[UNLK ]"), p.id)
+		r.result(p.id, "unlocked", unlockNote(p.item, inConfig[p.id]))
 	}
 
 	lk.Version = 1
 	if err := writeLock(lockPath, lk); err != nil {
+		if JSONOutput {
+			return r.fail(1, fmt.Sprintf("lock write error: %v", err))
+		}
 		fmt.Fprintf(out, "lock write error: %v\n", err)
 		if exit == 0 {
 			exit = 1
 		}
 	}
-	return exit
+	return r.finish(exit)
 }
 
 // unlockNote describes, for the confirmation listing, why an entry is unlocked: whether it's

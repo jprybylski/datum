@@ -68,8 +68,9 @@ func types(
 		encoder := json.NewEncoder(out)
 		encoder.SetIndent("", "  ")
 		err := encoder.Encode(struct {
-			Types []datum.SourceTypeSpec `json:"types"`
-		}{Types: specs})
+			Format string                 `json:"format"`
+			Types  []datum.SourceTypeSpec `json:"types"`
+		}{Format: ReportFormat, Types: specs})
 		if err != nil {
 			fmt.Fprintf(out, "json encode error: %v\n", err)
 			return 1
@@ -106,9 +107,7 @@ func types(
 
 func printTypesError(out io.Writer, message string) {
 	if JSONOutput {
-		err := json.NewEncoder(out).Encode(struct {
-			Error string `json:"error"`
-		}{Error: message})
+		err := json.NewEncoder(out).Encode(errorDocument(message))
 		if err == nil {
 			return
 		}

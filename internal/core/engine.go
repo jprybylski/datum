@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -257,13 +258,27 @@ func skipIfDeleted(w io.Writer, res *Result, dsID string, item *LockItem) bool {
 //   - 1: One or more datasets failed verification or had fetch errors
 //   - 2: Configuration error or unknown handler type
 func Check(ctx context.Context, cfgPath, lockPath string, concurrency int) int {
+	return CheckWith(ctx, cfgPath, lockPath, Options{Concurrency: concurrency})
+}
+
+// CheckWith is Check with the opt-in behaviour in opts (see Options). With opts.ReportOnly it
+// writes nothing at all - no targets, no lockfile, no ignore rules - and reports "update"
+// datasets that would be re-fetched as stale (#40).
+func CheckWith(ctx context.Context, cfgPath, lockPath string, opts Options) int {
+	if opts.StageDir != "" || opts.LockOut != "" {
+		return reportError("usage error", errors.New("--stage-dir and --lock-out apply to fetch only"))
+	}
+	defer opts.applySettings()()
+
 	// Load configuration file
-	cfg, err := readConfig(cfgPath)
+	cfg, info, err := loadConfig(cfgPath, lockPath, opts, scopeAllStrict)
 	if err != nil {
 		return reportError("config error", err)
 	}
-	if err := reconcileIgnores(cfg); err != nil {
-		return reportError("ignore error", err)
+	if !opts.ReportOnly {
+		if err := reconcileIgnoresWith(cfg, info, opts); err != nil {
+			return reportError("ignore error", err)
+		}
 	}
 
 	// Load lockfile (or create empty one if it doesn't exist)
@@ -281,7 +296,7 @@ func Check(ctx context.Context, cfgPath, lockPath string, concurrency int) int {
 	outputs := make([]string, len(cfg.Datasets))
 	results := make([]Result, len(cfg.Datasets))
 	exitCodes := make([]int, len(cfg.Datasets))
-	runConcurrently(len(cfg.Datasets), concurrency, func(i int) {
+	runConcurrently(len(cfg.Datasets), opts.concurrency(), func(i int) {
 		ds := cfg.Datasets[i]
 		policy := firstNonEmpty(ds.Policy, cfg.Defaults.Policy)
 		results[i].ID = ds.ID
@@ -290,7 +305,11 @@ func Check(ctx context.Context, cfgPath, lockPath string, concurrency int) int {
 		if JSONOutput {
 			w = io.Discard
 		}
-		exitCodes[i] = checkOneDataset(ctx, w, &results[i], ds, policy, store, now, cfg.Datasets)
+		noVCSWarning(w, &results[i], ds, cfg, opts)
+		if !opts.ReportOnly {
+			recoverTarget(w, &results[i], ds)
+		}
+		exitCodes[i] = checkOneDataset(ctx, w, &results[i], ds, policy, store, now, cfg.Datasets, opts.ReportOnly)
 		outputs[i] = out.String()
 	})
 
@@ -302,24 +321,60 @@ func Check(ctx context.Context, cfgPath, lockPath string, concurrency int) int {
 	}
 
 	// Write updated lockfile back to disk
-	lk.Version = 1
-	lk.LastChecked = &now
-	lockErr := writeLock(lockPath, lk)
-	if lockErr != nil && exit == 0 {
-		exit = 1
+	var lockErr error
+	if !opts.ReportOnly {
+		lk.Version = 1
+		lk.LastChecked = &now
+		lockErr = writeLock(lockPath, lk)
+		if lockErr != nil && exit == 0 {
+			exit = 1
+		}
 	}
 
+	printOutcome(results, outputs, lockErr)
+	return exit
+}
+
+// printOutcome prints a check or fetch run's results, as JSON or as the buffered text, with
+// secrets redacted either way.
+func printOutcome(results []Result, outputs []string, lockErr error) {
 	if JSONOutput {
 		printReport(results, lockErr)
-	} else {
-		for _, out := range outputs {
-			fmt.Print(out)
-		}
-		if lockErr != nil {
-			fmt.Printf("lock write error: %v\n", lockErr)
-		}
+		return
 	}
-	return exit
+	for _, out := range outputs {
+		fmt.Print(redact(out))
+	}
+	if lockErr != nil {
+		fmt.Println(redact(fmt.Sprintf("lock write error: %v", lockErr)))
+	}
+}
+
+// noVCSWarning notes that a dataset's ignore setting has no effect under --no-vcs (#35).
+func noVCSWarning(w io.Writer, res *Result, ds Dataset, cfg *Config, opts Options) {
+	if !opts.NoVCS || !ds.ShouldIgnore(cfg.Defaults.Ignore) {
+		return
+	}
+	msg := "ignore: true has no effect with --no-vcs; no ignore rule was written"
+	fmt.Fprintf(w, "%s %s: %s\n", colorize(ansiYellow, "[WARN]"), ds.ID, msg)
+	res.Warnings = append(res.Warnings, msg)
+}
+
+// recoverTarget finishes or undoes a directory swap an earlier run left half done (see
+// RecoverDirSwap), so the target holds a complete tree before it's hashed or replaced.
+func recoverTarget(w io.Writer, res *Result, ds Dataset) {
+	recovered, err := RecoverDirSwap(ds.Target)
+	var msg string
+	switch {
+	case err != nil:
+		msg = fmt.Sprintf("recovering an interrupted directory sync: %v", err)
+	case recovered:
+		msg = "restored the previous tree after an interrupted directory sync"
+	default:
+		return
+	}
+	fmt.Fprintf(w, "%s %s: %s\n", colorize(ansiYellow, "[WARN]"), ds.ID, msg)
+	res.Warnings = append(res.Warnings, msg)
 }
 
 // checkOneDataset runs Check's per-dataset logic, writing progress lines to w and reading/writing
@@ -327,7 +382,7 @@ func Check(ctx context.Context, cfgPath, lockPath string, concurrency int) int {
 //
 // res is optional (nil unless the caller is building --json output); when non-nil it's populated
 // with the same outcome the text lines describe, so the two output modes never disagree.
-func checkOneDataset(ctx context.Context, w io.Writer, res *Result, ds Dataset, policy string, store *lockStore, now time.Time, allDatasets []Dataset) int {
+func checkOneDataset(ctx context.Context, w io.Writer, res *Result, ds Dataset, policy string, store *lockStore, now time.Time, allDatasets []Dataset, reportOnly bool) int {
 	sources := ds.GetSources()
 
 	// Get the lock entry for this dataset (may be nil if this is the first run)
@@ -378,6 +433,22 @@ func checkOneDataset(ctx context.Context, w io.Writer, res *Result, ds Dataset, 
 	switch policy {
 	case "update":
 		// UPDATE policy: Automatically fetch if remote changed or local target is missing
+		if (stale || !fileExists(ds.Target)) && reportOnly {
+			// --report-only: say what update would do, and do none of it.
+			msg := "remote changed; would update (--report-only)"
+			if !stale {
+				msg = "target missing; would update (--report-only)"
+			}
+			writeFingerprintChange(w, colorize(ansiYellow, "[STALE]"), "        ", ds.ID, lockfp, fp)
+			fmt.Fprintf(w, "        %s\n", msg)
+			if res != nil {
+				res.Status = StatusStale
+				res.Message = msg
+				res.LockFingerprint = lockfp
+				res.RemoteFingerprint = fp
+			}
+			return 0
+		}
 		if stale || !fileExists(ds.Target) {
 			fmt.Fprintf(w, "%s %s: refreshing\n", colorize(ansiCyan, "[UPD ]"), ds.ID)
 
@@ -400,7 +471,7 @@ func checkOneDataset(ctx context.Context, w io.Writer, res *Result, ds Dataset, 
 				fmt.Fprintf(w, "%s %s: source may be inaccessible - please verify the source configuration\n", colorize(ansiBlue, "[INFO]"), ds.ID)
 				failed := store.ensure(ds.ID)
 				failed.InaccessibleAt = &now
-				failed.InaccessibleError = err.Error()
+				failed.InaccessibleError = redact(err.Error())
 				if res != nil {
 					res.Status = StatusError
 					res.Message = msg
@@ -412,7 +483,7 @@ func checkOneDataset(ctx context.Context, w io.Writer, res *Result, ds Dataset, 
 
 			// Update lockfile with new fingerprint and local hash
 			// Clear inaccessible status since fetch succeeded
-			h, err := HashPath(ds.Target)
+			desc, err := describeTarget(ds.Target, result.manifest)
 			if err != nil {
 				msg := fmt.Sprintf("local hash after fetch: %v", err)
 				fmt.Fprintf(w, "%s %s: %s\n", colorize(ansiYellow, "[WARN]"), ds.ID, msg)
@@ -420,7 +491,7 @@ func checkOneDataset(ctx context.Context, w io.Writer, res *Result, ds Dataset, 
 					res.Warnings = append(res.Warnings, msg)
 				}
 			}
-			store.set(ds.ID, &LockItem{LocalSHA256: h, RemoteFingerprint: fp, DirPaths: result.manifest, CheckedAt: &now, InaccessibleAt: nil, InaccessibleError: ""})
+			store.set(ds.ID, desc.lockItem(fp, result.manifest, now))
 			if res != nil {
 				res.Status = StatusUpdated
 				res.LockFingerprint = lockfp
@@ -516,19 +587,42 @@ func checkOneDataset(ctx context.Context, w io.Writer, res *Result, ds Dataset, 
 //   - 1: One or more datasets failed to fetch
 //   - 2: Configuration error or unknown handler type
 func Fetch(ctx context.Context, cfgPath, lockPath string, ids []string, concurrency int) int {
+	return FetchWith(ctx, cfgPath, lockPath, ids, Options{Concurrency: concurrency})
+}
+
+// FetchWith is Fetch with the opt-in behaviour in opts (see Options). Only the selected
+// datasets' ${NAME} references must resolve (#42). With opts.StageDir and opts.LockOut it's a
+// staged fetch (#38): targets are written under StageDir and the new lockfile to LockOut, and
+// the real targets, lockfile and ignore rules are left untouched.
+func FetchWith(ctx context.Context, cfgPath, lockPath string, ids []string, opts Options) int {
+	if opts.ReportOnly {
+		return reportError("usage error", errors.New("--report-only applies to check only"))
+	}
+	staged, err := opts.staged(lockPath)
+	if err != nil {
+		return reportError("usage error", err)
+	}
+	defer opts.applySettings()()
+
 	// Load configuration file
-	cfg, err := readConfig(cfgPath)
+	cfg, info, err := loadConfig(cfgPath, lockPath, opts, scopeSelected(ids))
 	if err != nil {
 		return reportError("config error", err)
-	}
-	if err := reconcileIgnores(cfg); err != nil {
-		return reportError("ignore error", err)
 	}
 
 	// Build a set of IDs to fetch (if specific IDs were requested)
 	which := map[string]bool{}
 	for _, id := range ids {
 		which[id] = true
+	}
+
+	var stage *stagePlan
+	if staged {
+		if stage, err = planStage(cfg, info, opts, which); err != nil {
+			return reportError("config error", err)
+		}
+	} else if err := reconcileIgnoresWith(cfg, info, opts); err != nil {
+		return reportError("ignore error", err)
 	}
 
 	// Load lockfile (or create empty one if it doesn't exist)
@@ -541,12 +635,12 @@ func Fetch(ctx context.Context, cfgPath, lockPath string, ids []string, concurre
 	now := time.Now().UTC()
 
 	// Only the selected datasets get a slot (and output), same as the original sequential skip.
-	var selected []Dataset
-	for _, ds := range cfg.Datasets {
+	var selected []int
+	for i, ds := range cfg.Datasets {
 		if len(which) > 0 && !which[ds.ID] {
 			continue
 		}
-		selected = append(selected, ds)
+		selected = append(selected, i)
 	}
 
 	// In JSON mode the text writer is discarded entirely - results[i] carries the structured
@@ -554,14 +648,23 @@ func Fetch(ctx context.Context, cfgPath, lockPath string, ids []string, concurre
 	outputs := make([]string, len(selected))
 	results := make([]Result, len(selected))
 	exitCodes := make([]int, len(selected))
-	runConcurrently(len(selected), concurrency, func(i int) {
-		results[i].ID = selected[i].ID
+	runConcurrently(len(selected), opts.concurrency(), func(i int) {
+		index := selected[i]
+		ds := cfg.Datasets[index]
+		results[i].ID = ds.ID
 		var out strings.Builder
 		w := io.Writer(&out)
 		if JSONOutput {
 			w = io.Discard
 		}
-		exitCodes[i] = fetchOneDataset(ctx, w, &results[i], selected[i], store, now, cfg.Datasets)
+		var target *stagedTarget
+		if stage != nil {
+			target = &stage.targets[index]
+		} else {
+			noVCSWarning(w, &results[i], ds, cfg, opts)
+			recoverTarget(w, &results[i], ds)
+		}
+		exitCodes[i] = fetchOneDataset(ctx, w, &results[i], ds, store, now, cfg.Datasets, target)
 		outputs[i] = out.String()
 	})
 
@@ -572,24 +675,19 @@ func Fetch(ctx context.Context, cfgPath, lockPath string, ids []string, concurre
 		}
 	}
 
-	// Write updated lockfile back to disk
+	// Write updated lockfile back to disk (a staged fetch writes it to --lock-out instead)
 	lk.Version = 1
 	lk.LastChecked = &now
-	lockErr := writeLock(lockPath, lk)
+	lockOut := lockPath
+	if stage != nil {
+		lockOut = opts.LockOut
+	}
+	lockErr := writeLock(lockOut, lk)
 	if lockErr != nil && exit == 0 {
 		exit = 1
 	}
 
-	if JSONOutput {
-		printReport(results, lockErr)
-	} else {
-		for _, out := range outputs {
-			fmt.Print(out)
-		}
-		if lockErr != nil {
-			fmt.Printf("lock write error: %v\n", lockErr)
-		}
-	}
+	printOutcome(results, outputs, lockErr)
 	return exit
 }
 
@@ -598,7 +696,10 @@ func Fetch(ctx context.Context, cfgPath, lockPath string, ids []string, concurre
 //
 // res is optional (nil unless the caller is building --json output); when non-nil it's populated
 // with the same outcome the text lines describe, so the two output modes never disagree.
-func fetchOneDataset(ctx context.Context, w io.Writer, res *Result, ds Dataset, store *lockStore, now time.Time, allDatasets []Dataset) int {
+//
+// staged is non-nil for a staged fetch: ds.Target then already points into the stage folder,
+// and staged says where the real target is, so the lock records what promoting would produce.
+func fetchOneDataset(ctx context.Context, w io.Writer, res *Result, ds Dataset, store *lockStore, now time.Time, allDatasets []Dataset, staged *stagedTarget) int {
 	sources := ds.GetSources()
 
 	item := store.get(ds.ID)
@@ -627,7 +728,7 @@ func fetchOneDataset(ctx context.Context, w io.Writer, res *Result, ds Dataset, 
 		fmt.Fprintf(w, "%s %s: source may be inaccessible - please verify the source configuration\n", colorize(ansiBlue, "[INFO]"), ds.ID)
 		item := store.ensure(ds.ID)
 		item.InaccessibleAt = &now
-		item.InaccessibleError = err.Error()
+		item.InaccessibleError = redact(err.Error())
 		if res != nil {
 			res.Status = StatusError
 			res.Message = msg
@@ -637,7 +738,10 @@ func fetchOneDataset(ctx context.Context, w io.Writer, res *Result, ds Dataset, 
 
 	// Compute local hash and update lockfile
 	// Clear inaccessible status since fetch succeeded
-	h, err := HashPath(ds.Target)
+	desc, err := describeTarget(ds.Target, result.manifest)
+	if err == nil && staged != nil {
+		err = desc.overlay(staged, ds.Target, prevManifest, result.manifest)
+	}
 	if err != nil {
 		msg := fmt.Sprintf("local hash after fetch: %v", err)
 		fmt.Fprintf(w, "%s %s: %s\n", colorize(ansiYellow, "[WARN]"), ds.ID, msg)
@@ -645,10 +749,13 @@ func fetchOneDataset(ctx context.Context, w io.Writer, res *Result, ds Dataset, 
 			res.Warnings = append(res.Warnings, msg)
 		}
 	}
-	store.set(ds.ID, &LockItem{LocalSHA256: h, RemoteFingerprint: result.fp, DirPaths: result.manifest, CheckedAt: &now, InaccessibleAt: nil, InaccessibleError: ""})
+	store.set(ds.ID, desc.lockItem(result.fp, result.manifest, now))
 	if res != nil {
 		res.Status = StatusFetched
 		res.RemoteFingerprint = result.fp
+		if staged != nil {
+			res.Staged = desc.stagedResult(staged, ds.Target, prevManifest, result.manifest)
+		}
 	}
 	return 0
 }
