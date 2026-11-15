@@ -46,7 +46,11 @@ checksum:
 # (confirmed the hard way: v1.2.0's first release went out with an empty description because of
 # this). Leaving changelog at its default is fine: --release-notes takes priority over it anyway.
 
+# A tag's assets are immutable: never replace an asset of an existing release (release.yml also
+# refuses to publish a version whose tag points at another commit). Downstream tools pin these
+# archives by SHA-256.
 release:
   github:
     owner: jprybylski
     name: datum
+  replace_existing_artifacts: false
