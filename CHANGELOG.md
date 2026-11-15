@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-11-15
+
 ### Added
 - Opt-in global flags for running datum on configs it didn't write, documented in the new
   "Embedding datum" page. Without them nothing changes.
